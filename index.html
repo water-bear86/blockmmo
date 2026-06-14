@@ -837,6 +837,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyP'&&!e.repeat)enterEngineMode('platformer');
   if(e.code==='KeyO'&&!e.repeat)enterEngineMode('battlefield');
   if(e.code==='KeyU'&&!e.repeat)enterEngineMode('turnbased');
+  if(e.code==='KeyK'&&!e.repeat)enterBossSequence();
   if(e.code==='KeyT'&&!e.repeat)exitEngineMode();
   if(e.code==='Escape'&&!e.repeat){ if(state.graceOpen)closeGrace(); else if(state.wardrobeOpen)closeWardrobe(); else player.lock=null; }
 });
@@ -846,7 +847,7 @@ addEventListener('keyup',e=>{ keys[e.code]=false; released[e.code]=true; });
 /* Codex's standalone engine modules (engine/*.js) loaded dynamically and driven
    through a host adapter. Town stays the existing top-down game; P enters the
    demo platformer, O the battlefield, T returns to Hearthlight. */
-let modeManager=null, platformerMode=null, battlefieldMode=null, turnbasedMode=null, RCEngine=null;
+let modeManager=null, platformerMode=null, battlefieldMode=null, turnbasedMode=null, bossSeq=null, RCEngine=null;
 const engineCam={x:0,y:0,w:VIEW_W,h:VIEW_H};
 const PLAT_LEVEL={id:'a1-parish-road',name:'Parish Road Receipts',width:1240,height:640,spawn:{x:64,y:438},physics:{maxRun:220,jump:455},
   platforms:[{id:'ground-a',x:0,y:500,w:360,h:48,type:'solid'},{id:'ground-b',x:360,y:500,w:320,h:48,type:'solid'},{id:'ground-c',x:680,y:500,w:560,h:48,type:'solid'},{id:'ledge',x:214,y:396,w:150,h:12,type:'oneWay'},{id:'receipt-post',x:420,y:424,w:78,h:14,type:'solid',vx:48,minX:420,maxX:590},{id:'bell-step',x:740,y:414,w:120,h:16,type:'solid'},{id:'boss-step',x:930,y:392,w:118,h:16,type:'solid'}],
@@ -857,6 +858,11 @@ const BATTLE_LEVEL={id:'a1-mempool-yard',name:'Mempool Yard',width:1500,height:9
   zones:[{id:'west-tablets',x:120,y:250,w:380,h:280,regen:9,clearFor:14},{id:'east-ledger',x:760,y:220,w:430,h:320,regen:7,clearFor:16},{id:'south-well',x:500,y:590,w:420,h:230,regen:11,clearFor:12}],
   waves:[{id:'first-debtors',at:0.4,zoneId:'west-tablets',spawns:[{type:'hollow',x:340,y:330,count:3},{type:'hound',x:390,y:455,count:1}]},{id:'ledger-knights',at:5.5,zoneId:'east-ledger',spawns:[{type:'knight',x:870,y:320,count:2},{type:'hollow',x:1030,y:440,count:3}]},{id:'well-surge',at:10.5,zoneId:'south-well',spawns:[{type:'hound',x:630,y:690,count:3},{type:'hollow',x:760,y:710,count:3}]}]};
 const TURN_ENCOUNTER={id:'duel-demo',name:'Sparring',opponent:{name:'Hollow Duelist',hp:64,attack:9,defense:1,color:'#7c3936'}};
+const BOSS_SCRIPT={id:'gate-sexton-marrow',name:'Gate Sexton Marrow',beat:0.8,segments:[
+  {mode:'platformer',name:'Parish Road approach',payload:PLAT_LEVEL,beatText:'The tithe-house gate looms...',complete:{event:'boss'}},
+  {mode:'battlefield',name:'Tithe-house yard',payload:BATTLE_LEVEL,beatText:'The Sexton stamps the dead awake.',complete:{event:'cleared'}},
+  {mode:'turnbased',name:'Marrow, face to face',payload:TURN_ENCOUNTER,beatText:'He raises the ledger-stamp.',complete:{event:'duel'}}
+]};
 const engineApi={
   viewW:VIEW_W, viewH:VIEW_H, camera:engineCam,
   player:{ id:'local', name:'Recorded', x:0,y:0,vx:0,vy:0,dirX:1,dirY:0,moving:false, hp:120,maxHp:120,sta:100,maxSta:100,
@@ -867,11 +873,13 @@ const engineApi={
   assets:{ drawSheet(){ return false; } },
   net:{ id:'local', _h:{}, on(t,fn){ (this._h[t]||(this._h[t]=[])).push(fn); return ()=>{}; }, send(){} },
   chain:{}, log:(m)=>log(m),
-  onBossTrigger(id){ log('A boss stirs ('+id+'). Returning to the parish.'); exitEngineMode(); },
-  onExit(id){ log('Stage cleared ('+id+').'); exitEngineMode(); },
+  onBossTrigger(id){ if(bossSeq&&state.mode==='sequencer'){ bossSeq.segmentEvent('boss',{id}); return; } log('A boss stirs ('+id+'). Returning to the parish.'); exitEngineMode(); },
+  onExit(id){ if(bossSeq&&state.mode==='sequencer'){ bossSeq.segmentEvent('exit',{id}); return; } log('Stage cleared ('+id+').'); exitEngineMode(); },
   onCreatureDefeated(){}, onWaveSpawn(w){ if(w&&w.id)log('Wave incoming: '+w.id); },
   onZoneCleared(id){ log('Safe ground secured: '+id); }, onMeleeHit(){},
-  onDuelAccepted(){ log('Duel accepted.'); }, onDuelResult(r){ log('Duel: '+((r&&r.reason)||'over')); } };
+  onDuelAccepted(){ log('Duel accepted.'); },
+  onDuelResult(r){ if(bossSeq&&state.mode==='sequencer'){ bossSeq.segmentEvent('duel',r); return; } log('Duel: '+((r&&r.reason)||'over')); },
+  onBossComplete(script){ log((script&&script.name||'The boss')+' yields. Boss Sigil sealed.'); endBossSequence(); } };
 function engineInput(){
   return { left:keys.KeyA||keys.ArrowLeft, right:keys.KeyD||keys.ArrowRight, up:keys.KeyW||keys.ArrowUp, down:keys.KeyS||keys.ArrowDown,
     moveLeft:keys.KeyA||keys.ArrowLeft, moveRight:keys.KeyD||keys.ArrowRight, moveUp:keys.KeyW||keys.ArrowUp, moveDown:keys.KeyS||keys.ArrowDown,
@@ -891,6 +899,7 @@ function enterEngineMode(name){
   log(name==='battlefield'?'Mempool Yard — survive the waves. (T to leave)':name==='turnbased'?'A duel begins — Up/Down choose, J/Space confirm. (T to leave)':'Parish Road Receipts — reach the gate. (T to leave)');
 }
 function exitEngineMode(){
+  if(state.mode==='sequencer'){ endBossSequence(); return; }
   if(state.mode==='town')return;
   if(modeManager)modeManager.setMode(null, ctx, engineApi);
   player.hp=Math.max(1,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
@@ -901,8 +910,42 @@ function updateEngineMode(dt){
   player.hp=Math.max(0,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
   updateHud();
 }
-Promise.all([import('./engine/mode.js'),import('./engine/platformer.js'),import('./engine/battlefield.js'),import('./engine/turnbased.js')])
-  .then(([m,p,b,t])=>{ RCEngine={createModeManager:m.createModeManager,createPlatformerMode:p.createPlatformerMode,createBattlefieldMode:b.createBattlefieldMode,createTurnBasedMode:t.createTurnBasedMode}; modeManager=RCEngine.createModeManager(); })
+/* Segment sequencer (F3): chains play-styles into one boss encounter, above the mode manager. */
+function startSegmentMode(seg){
+  let mode;
+  if(seg.mode==='battlefield')mode=RCEngine.createBattlefieldMode(seg.payload);
+  else if(seg.mode==='turnbased')mode=RCEngine.createTurnBasedMode(seg.payload);
+  else mode=RCEngine.createPlatformerMode(seg.payload);
+  modeManager.setMode(mode, ctx, engineApi);
+}
+function enterBossSequence(){
+  if(!modeManager||!RCEngine||!RCEngine.createSegmentSequencer||!state.started||player.dead||state.mode!=='town')return;
+  if(state.graceOpen)closeGrace(); if(state.wardrobeOpen)closeWardrobe();
+  const ep=engineApi.player; ep.maxHp=player.maxHp; ep.maxSta=player.maxSta; ep.hp=player.hp; ep.sta=player.sta; ep.name=player.name;
+  bossSeq=RCEngine.createSegmentSequencer(BOSS_SCRIPT);
+  bossSeq.enter(engineApi, { startMode:startSegmentMode, exitMode(){ if(modeManager)modeManager.setMode(null, ctx, engineApi); }, log:(m)=>log(m) });
+  state.mode='sequencer';
+  log('Boss encounter: '+(BOSS_SCRIPT.name||'')+'. (T to abandon)');
+}
+function endBossSequence(){
+  if(modeManager)modeManager.setMode(null, ctx, engineApi);
+  player.hp=Math.max(1,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
+  bossSeq=null; state.mode='town';
+}
+function updateBossSequence(dt){
+  bossSeq.update(dt);
+  if(!bossSeq.isBeat()&&modeManager.getMode()){
+    modeManager.update(dt, engineInput());
+    if(bossSeq.activeMode()==='battlefield'){
+      const s=modeManager.getMode().getState&&modeManager.getMode().getState();
+      if(s&&s.waves&&s.waves.length&&s.waves.every(w=>w.done)&&(s.creatures||[]).filter(c=>!c.dead).length===0)bossSeq.segmentEvent('cleared',{});
+    }
+  }
+  player.hp=Math.max(0,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
+  updateHud();
+}
+Promise.all([import('./engine/mode.js'),import('./engine/platformer.js'),import('./engine/battlefield.js'),import('./engine/turnbased.js'),import('./engine/sequencer.js')])
+  .then(([m,p,b,t,s])=>{ RCEngine={createModeManager:m.createModeManager,createPlatformerMode:p.createPlatformerMode,createBattlefieldMode:b.createBattlefieldMode,createTurnBasedMode:t.createTurnBasedMode,createSegmentSequencer:s.createSegmentSequencer}; modeManager=RCEngine.createModeManager(); })
   .catch(err=>console.warn('RUNECHAIN engine modules failed to load:',err));
 function updateMouse(e){
   const r=canvas.getBoundingClientRect();
@@ -1087,6 +1130,7 @@ function updatePlayer(dt){
 }
 function update(dt){
   state.time+=dt;
+  if(state.mode==='sequencer'){ if(bossSeq)updateBossSequence(dt); return; }
   if(state.mode!=='town'){ if(modeManager)updateEngineMode(dt); return; }
   syncMouseWorld();
   if(state.started){
@@ -1435,6 +1479,7 @@ function drawAim(){
 }
 function draw(){
   ctx.imageSmoothingEnabled=false;
+  if(state.mode==='sequencer'){ if(bossSeq&&bossSeq.isBeat())bossSeq.render(ctx,engineCam); else if(modeManager)modeManager.render(ctx,engineCam); else { ctx.fillStyle='#05060a'; ctx.fillRect(0,0,VIEW_W,VIEW_H); } return; }
   if(state.mode!=='town'){ if(modeManager)modeManager.render(ctx,engineCam); else { ctx.fillStyle='#101619'; ctx.fillRect(0,0,VIEW_W,VIEW_H); } return; }
   drawTerrain();
   const actors=[...enemies.filter(e=>!(e.dead&&e.deathT<=0)),...Object.values(remotes),player].sort((a,b)=>a.y-b.y);
