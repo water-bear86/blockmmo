@@ -490,8 +490,51 @@ const STORY = window.RUNECHAIN_STORY || {
     steps:[
       {id:'ledgerbound', text:'Fracture the Ledger-Bound and sever your name from the ancestral chain.', done:{event:'kill', monster:'ledgerbound', count:1}}
     ],
-    onComplete:['The golem fractures. Your name contests its inheritance — and wins. The Contested Will is yours.'],
-    rewards:{rune:120}
+    onComplete:['The golem fractures. Your name contests its inheritance — and wins. The Contested Will is yours. The Ascent of Testimony opens above.'],
+    rewards:{rune:120},
+    next:'q10'
+  },{
+    id:'q10',
+    title:'Archive Tower',
+    onStart:['The Archive Tower rewrites you in real time. The ledger-desk already has your entry.'],
+    steps:[
+      {id:'reading-desk', text:'Let the archive reading-desk write your name in its current form.', done:{event:'interact', target:'reading-desk', count:1}},
+      {id:'void-seals', text:'Stabilize 2 Void Seals before the hyperinflation tick corrupts them.', done:{event:'interact', target:'void-seal', count:2}}
+    ],
+    onComplete:["The Prime Witness stirs. She has seen every record since the first. She confirms your paradox."],
+    rewards:{rune:48},
+    next:'q11'
+  },{
+    id:'q11',
+    title:'Ascent of Testimony',
+    onStart:['The Ascent climbs and contradicts itself. Midway — you fall up.'],
+    steps:[
+      {id:'audit-wolves', text:'Outrun 3 Audit Wolf packs on the Ascent of Testimony.', done:{event:'kill', monster:'hollow', count:3}},
+      {id:'scrivener', text:'Defeat the Scrivener before your stat-sheet is fully greyed.', done:{event:'kill', monster:'scrivener', count:1}}
+    ],
+    onComplete:['The Scrivener falls. Write-access is yours. The Scrivener\'s Quill drops.'],
+    rewards:{rune:80},
+    next:'q12'
+  },{
+    id:'q12',
+    title:'Seized Asset Yard',
+    onStart:['Your own repossessed relics patrol as husks. The arena overlaps three zones at once.'],
+    steps:[
+      {id:'ledger-cores', text:'Interact with 2 core ledgers to stabilize your record.', done:{event:'interact', target:'ledger-core', count:2}},
+      {id:'cascade', text:'Contest 3 consecutive decrees from the Cascade Anchor to destabilize it.', done:{event:'kill', monster:'cascade', count:1}}
+    ],
+    onComplete:["The Cascade Anchor retreats. The Auditor isn't evil — only consistent. The paradox is your own."],
+    rewards:{rune:100},
+    next:'q13'
+  },{
+    id:'q13',
+    title:'The Auditor',
+    onStart:['The humanoid silhouette of scrolling text faces you. It cannot be killed. Only answered.'],
+    steps:[
+      {id:'auditor', text:'Stand your ground against the Auditor and make your choice.', done:{event:'kill', monster:'auditor', count:1}}
+    ],
+    onComplete:['The ledger rotates one final time. Your amendment stands. You are the Second Scribe.'],
+    rewards:{rune:200}
   }]
 };
 function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -603,7 +646,7 @@ function itemBonuses(){
 }
 
 /* ------------------------------ Canvas ---------------------------------- */
-const VIEW_W=640, VIEW_H=360, TILE=16, SAFE_RADIUS=72, WORLD_LIMIT=1800;
+const VIEW_W=640, VIEW_H=360, TILE=16, SAFE_RADIUS=72, WORLD_LIMIT=2400;
 const PLAYER_SPEED=112, DASH_SPEED=250;
 const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
@@ -714,7 +757,10 @@ const TYPES={
   tallow:{key:'tallow',asset:'sentinel',name:'Mother Tallow',short:'MOTHER TALLOW',hp:260,dmg:22,speed:20,reward:100,aggro:134,reach:28,boss:true,color:'#f1c75b',sigilName:'The Waxen Testament',sigilKey:'waxen-testament'},
   foreman:{key:'foreman',asset:'knight',name:'The Debt Foreman',short:'FOREMAN',hp:200,dmg:20,speed:18,reward:68,aggro:120,reach:22,color:'#4ecbaa'},
   bifurcated:{key:'bifurcated',asset:'knight',name:'Bifurcated Guard',short:'GUARD',hp:160,dmg:16,speed:20,reward:58,aggro:115,reach:20,color:'#d4a83e'},
-  ledgerbound:{key:'ledgerbound',asset:'sentinel',name:'The Ledger-Bound',short:'LEDGER-BOUND',hp:340,dmg:24,speed:14,reward:160,aggro:140,reach:30,boss:true,color:'#a8c8ff',sigilName:'The Contested Will',sigilKey:'contested-will'}
+  ledgerbound:{key:'ledgerbound',asset:'sentinel',name:'The Ledger-Bound',short:'LEDGER-BOUND',hp:340,dmg:24,speed:14,reward:160,aggro:140,reach:30,boss:true,color:'#a8c8ff',sigilName:'The Contested Will',sigilKey:'contested-will'},
+  scrivener:{key:'scrivener',asset:'sorcerer',name:'The Scrivener',short:'SCRIVENER',hp:160,dmg:18,speed:16,reward:88,aggro:130,reach:90,ranged:true,color:'#1a1a2e'},
+  cascade:{key:'cascade',asset:'sentinel',name:'Cascade Anchor',short:'CASCADE',hp:200,dmg:14,speed:10,reward:108,aggro:118,reach:26,color:'#e8f0ff'},
+  auditor:{key:'auditor',asset:'sentinel',name:'The Auditor',short:'AUDITOR',hp:400,dmg:10,speed:12,reward:300,aggro:150,reach:32,boss:true,color:'#f0f0e8',sigilName:'The Amended Record',sigilKey:'amended-record'}
 };
 function spawnEnemy(key,x,y,gate=0,opts={}){
   const t=TYPES[key];
@@ -739,6 +785,13 @@ function initWorld(){
   spawnEnemy('hollow',1276,56,0,{unlockQuest:'q08'});
   spawnEnemy('bifurcated',1344,-6,0,{unlockQuest:'q08'});
   spawnEnemy('ledgerbound',1544,0,0,{unlockQuest:'q09'});
+  spawnEnemy('hollow',1700,-52,0,{unlockQuest:'q11'});
+  spawnEnemy('hollow',1760,46,0,{unlockQuest:'q11'});
+  spawnEnemy('scrivener',1828,0,0,{unlockQuest:'q11'});
+  spawnEnemy('hollow',1940,-52,0,{unlockQuest:'q12'});
+  spawnEnemy('hollow',1996,46,0,{unlockQuest:'q12'});
+  spawnEnemy('cascade',2060,0,0,{unlockQuest:'q12'});
+  spawnEnemy('auditor',2280,0,0,{unlockQuest:'q13'});
 }
 function enemyUnlocked(e){
   if(e.unlockQuest && !Story.questReached(e.unlockQuest))return false;
@@ -975,6 +1028,35 @@ const AREA2_ENCOUNTERS={
     {mode:'turnbased',name:'The Ledger-Bound',payload:TURN_LEDGERBOUND,beatText:'Stone names press down.',complete:{event:'duel'}}
   ]}
 };
+/* ---- Area 3 — The Archive of Attestation --------------------------------- */
+/* Ascent of Testimony: vertical climb that contradicts itself; second half is floaty-gravity (high jump, slow fall) to simulate the "inverted" upper section. */
+const PLAT_ASCENT_TESTIMONY={id:'a3-ascent-testimony',name:'Ascent of Testimony',width:960,height:880,spawn:{x:100,y:800},physics:{maxRun:210,jump:520},
+  platforms:[{id:'ground',x:0,y:840,w:960,h:40,type:'solid'},{id:'t1-a',x:60,y:760,w:180,h:12,type:'solid'},{id:'t1-b',x:380,y:730,w:160,h:12,type:'oneWay'},{id:'t1-c',x:700,y:750,w:200,h:12,type:'solid'},{id:'t2-a',x:140,y:660,w:160,h:12,type:'oneWay'},{id:'t2-b',x:560,y:640,w:180,h:12,type:'solid'},{id:'t2-c',x:800,y:660,w:140,h:12,type:'oneWay'},{id:'t3-a',x:60,y:560,w:200,h:12,type:'solid'},{id:'t3-b',x:440,y:540,w:160,h:12,type:'oneWay'},{id:'t3-c',x:720,y:555,w:180,h:12,type:'solid'},{id:'invert-marker',x:280,y:480,w:400,h:8,type:'solid'},{id:'u1-a',x:100,y:400,w:160,h:10,type:'oneWay'},{id:'u1-b',x:480,y:380,w:200,h:10,type:'oneWay'},{id:'u1-c',x:760,y:400,w:160,h:10,type:'solid'},{id:'u2-a',x:60,y:300,w:200,h:10,type:'oneWay'},{id:'u2-b',x:360,y:280,w:160,h:10,type:'solid'},{id:'u2-c',x:680,y:300,w:220,h:10,type:'oneWay'},{id:'u3-a',x:140,y:200,w:200,h:10,type:'solid'},{id:'u3-b',x:500,y:180,w:200,h:10,type:'solid'},{id:'u3-c',x:820,y:200,w:100,h:10,type:'oneWay'},{id:'boss-shelf',x:360,y:100,w:340,h:14,type:'solid'}],
+  hazards:[{id:'page-fall-a',type:'projectile',x:200,y:840,w:20,h:16,interval:1.4,speedY:-280,damage:2},{id:'page-fall-b',type:'projectile',x:600,y:840,w:20,h:16,interval:1.8,speedY:-275,damage:2},{id:'ink-static-a',type:'stun',x:400,y:465,w:160,h:16,stun:0.6},{id:'ink-static-b',type:'stun',x:700,y:545,w:120,h:12,stun:0.5},{id:'paradox-echo',type:'damage',x:480,y:370,w:40,h:14,damage:3},{id:'redact-zone',type:'slow',x:280,y:250,w:400,h:30,slow:0.28},{id:'compliance-drag',type:'slow',x:0,y:800,w:960,h:40,slow:0.50},{id:'decree-blow-a',type:'knockback',x:620,y:180,w:50,h:20,damage:2,knockX:-280,knockY:180},{id:'decree-blow-b',type:'knockback',x:100,y:280,w:50,h:20,damage:2,knockX:280,knockY:180}],
+  bossTrigger:{id:'scrivener',x:440,y:54,w:180,h:46,lock:{x:300,y:0,w:440,h:200}},exit:{id:'to-seized-yard',x:900,y:760,w:40,h:80}};
+/* Seized Asset Yard: three overlapping ledger-zones, Contradiction Hollows + Relic Shades. */
+const BATTLE_SEIZED_YARD={id:'a3-seized-yard',name:'Seized Asset Yard / Contradiction Field',width:1400,height:900,spawn:{x:200,y:380},physics:{speed:168},
+  creatures:{hollow:{hp:24,speed:72,damage:3,reach:14,radius:9,color:'#d0c0ff'},hound:{hp:16,speed:130,damage:4,reach:12,radius:7,color:'#ff80c0'},knight:{hp:44,speed:32,damage:8,reach:22,radius:12,color:'#e8c880'},default:{hp:20,speed:55,damage:3,reach:14,radius:9,color:'#c0d0e8'}},
+  zones:[{id:'recorded-zone',x:80,y:140,w:380,h:300,regen:10,clearFor:14},{id:'unrecorded-zone',x:960,y:140,w:360,h:300,regen:6,clearFor:12},{id:'void-zone',x:540,y:480,w:320,h:300,regen:4,clearFor:16}],
+  waves:[{id:'contradiction-first',at:0.4,zoneId:'recorded-zone',spawns:[{type:'hollow',x:200,y:240,count:4},{type:'hound',x:380,y:320,count:2}]},{id:'relic-shades',at:6.0,zoneId:'unrecorded-zone',spawns:[{type:'knight',x:1060,y:240,count:2},{type:'hollow',x:1200,y:340,count:3}]},{id:'void-surge',at:13.0,zoneId:'void-zone',spawns:[{type:'hound',x:620,y:580,count:4},{type:'hollow',x:720,y:660,count:4},{type:'knight',x:840,y:580,count:1}]}]};
+const TURN_SCRIVENER={id:'duel-scrivener',name:'The Scrivener',opponent:{name:'The Scrivener',hp:100,attack:14,defense:2,color:'#1a1a2e',sprite:'sorcerer'}};
+const TURN_CASCADE={id:'duel-cascade',name:'Cascade Anchor',opponent:{name:'Cascade Anchor',hp:130,attack:11,defense:6,color:'#e8f0ff',sprite:'sentinel'}};
+const TURN_AUDITOR={id:'duel-auditor',name:'The Auditor',opponent:{name:'The Auditor',hp:280,attack:8,defense:8,color:'#f0f0e8',sprite:'sentinel'}};
+const AREA3_ENCOUNTERS={
+  scrivener:{id:'scrivener',name:'The Scrivener',beat:0.8,segments:[
+    {mode:'platformer',name:'Ascent of Testimony',payload:PLAT_ASCENT_TESTIMONY,beatText:'The ledger eats itself.',complete:{event:'boss'}},
+    {mode:'turnbased',name:'The Scrivener rewrites the room',payload:TURN_SCRIVENER,beatText:'Every platform vanishes.',complete:{event:'duel'}}
+  ]},
+  cascade:{id:'cascade-anchor',name:'Cascade Anchor',beat:0.8,segments:[
+    {mode:'battlefield',name:'The Seized Asset Yard',payload:BATTLE_SEIZED_YARD,beatText:'Your relics walk as husks.',complete:{event:'cleared'}},
+    {mode:'turnbased',name:'Contest three decrees',payload:TURN_CASCADE,beatText:'You cannot damage it — contest its logic.',complete:{event:'duel'}}
+  ]},
+  auditor:{id:'the-auditor',name:'The Auditor',beat:0.9,segments:[
+    {mode:'platformer',name:'The Testimony Ascent',payload:PLAT_ASCENT_TESTIMONY,beatText:'Paradox waves invert your controls.',complete:{event:'boss'}},
+    {mode:'battlefield',name:'The Temporal Rift',payload:BATTLE_SEIZED_YARD,beatText:'Past versions of every enemy spawn.',complete:{event:'cleared'}},
+    {mode:'turnbased',name:'Make your choice',payload:TURN_AUDITOR,beatText:'The Auditor rotates one final time. Answer it.',complete:{event:'duel'}}
+  ]}
+};
 const engineApi={
   viewW:VIEW_W, viewH:VIEW_H, camera:engineCam,
   player:{ id:'local', name:'Recorded', x:0,y:0,vx:0,vy:0,dirX:1,dirY:0,moving:false, hp:120,maxHp:120,sta:100,maxSta:100,
@@ -1060,18 +1142,18 @@ function endBossSequence(){
   player.hp=Math.max(1,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
   bossSeq=null; bossEncounterEnemy=null; state.mode='town';
 }
-const BOSS_ENCOUNTER_KEYS=['sexton','mempool','tallow','foreman','bifurcated','ledgerbound'];
+const BOSS_ENCOUNTER_KEYS=['sexton','mempool','tallow','foreman','bifurcated','ledgerbound','scrivener','cascade','auditor'];
 function nearestBossEncounter(){
   let best=null, bd=70;
   for(const e of enemies){
-    if(e.dead||!BOSS_ENCOUNTER_KEYS.includes(e.key)||!(AREA1_ENCOUNTERS[e.key]||AREA2_ENCOUNTERS[e.key])||!enemyUnlocked(e))continue;
+    if(e.dead||!BOSS_ENCOUNTER_KEYS.includes(e.key)||!(AREA1_ENCOUNTERS[e.key]||AREA2_ENCOUNTERS[e.key]||AREA3_ENCOUNTERS[e.key])||!enemyUnlocked(e))continue;
     const d=dist(e,player);
     if(d<bd){ bd=d; best=e; }
   }
   return best;
 }
 function startBossEncounter(enemy){
-  const script=enemy&&(AREA1_ENCOUNTERS[enemy.key]||AREA2_ENCOUNTERS[enemy.key]);
+  const script=enemy&&(AREA1_ENCOUNTERS[enemy.key]||AREA2_ENCOUNTERS[enemy.key]||AREA3_ENCOUNTERS[enemy.key]);
   if(!modeManager||!RCEngine||!RCEngine.createSegmentSequencer||!script||!state.started||player.dead||state.mode!=='town')return;
   if(state.graceOpen)closeGrace(); if(state.wardrobeOpen)closeWardrobe();
   const ep=engineApi.player; ep.maxHp=player.maxHp; ep.maxSta=player.maxSta; ep.hp=player.hp; ep.sta=player.sta; ep.name=player.name;
@@ -1484,7 +1566,12 @@ const INTERACTABLES=[
   {id:'lectern-a',target:'ancestor-lectern',quest:'q06',x:1040,y:-44,label:'LECTERN',kind:'stone'},
   {id:'margin-scroll',target:'margin-scroll',quest:'q06',x:1108,y:38,label:'SCROLL',kind:'stone'},
   {id:'vault-seal-a',target:'vault-seal',quest:'q08',x:1364,y:-44,label:'VAULT',kind:'tablet'},
-  {id:'vault-seal-b',target:'vault-seal',quest:'q08',x:1430,y:36,label:'VAULT',kind:'tablet'}
+  {id:'vault-seal-b',target:'vault-seal',quest:'q08',x:1430,y:36,label:'VAULT',kind:'tablet'},
+  {id:'reading-desk',target:'reading-desk',quest:'q10',x:1680,y:-40,label:'DESK',kind:'stone'},
+  {id:'void-seal-a',target:'void-seal',quest:'q10',x:1750,y:38,label:'VOID SEAL',kind:'tallow'},
+  {id:'void-seal-b',target:'void-seal',quest:'q10',x:1820,y:-44,label:'VOID SEAL',kind:'tallow'},
+  {id:'ledger-core-a',target:'ledger-core',quest:'q12',x:1944,y:-44,label:'CORE',kind:'tablet'},
+  {id:'ledger-core-b',target:'ledger-core',quest:'q12',x:2000,y:38,label:'CORE',kind:'tablet'}
 ];
 function interactionKey(i){ return Story.state.activeQuestId+':'+i.id; }
 function interactableActive(i){
