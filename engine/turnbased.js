@@ -33,7 +33,7 @@ export function createTurnBasedMode(encounter = {}) {
       sta: (p && p.sta) || 100, maxSta: (p && p.maxSta) || 100, guarding: false };
     const o = encounter.opponent || {};
     foe = { name: o.name || encounter.name || 'Adversary', hp: o.hp || 60, maxHp: o.hp || 60,
-      attack: o.attack || 9, defense: o.defense || 0, color: o.color || '#b0563f', guarding: false };
+      attack: o.attack || 9, defense: o.defense || 0, color: o.color || '#b0563f', sprite: o.sprite || '', guarding: false };
     phase = 'intro'; timer = 0.9; menuIndex = 0; pending = null; result = null;
     shakeT = 0; heroFlash = 0; foeFlash = 0;
     logLine = (encounter.peerId ? 'A duel begins — ' : 'You face ') + foe.name + '.';
@@ -156,6 +156,7 @@ export function createTurnBasedMode(encounter = {}) {
     const cam = nextCamera || camera; const W = cam.w, H = cam.h;
     if (nextCamera) { nextCamera.x = 0; nextCamera.y = 0; nextCamera.w = W; nextCamera.h = H; }
     const sh = shakeT > 0 ? (Math.random() * 2 - 1) * 3 : 0;
+    const spr = api && api.assets && api.assets.drawSheet;
     c.save(); c.imageSmoothingEnabled = false; c.translate(Math.round(sh), 0);
     c.fillStyle = '#12161b'; c.fillRect(-4, 0, W + 8, H);
     c.fillStyle = '#1b2630';
@@ -164,13 +165,17 @@ export function createTurnBasedMode(encounter = {}) {
     // foe (right)
     const fx = Math.round(W * 0.72), fy = Math.round(H * 0.42);
     c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(fx, fy + 30, 34, 9, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = foeFlash > 0 ? '#f4eee0' : foe.color; c.fillRect(fx - 26, fy - 34, 52, 64);
-    c.fillStyle = '#0c0e12'; c.fillRect(fx - 14, fy - 18, 8, 8); c.fillRect(fx + 6, fy - 18, 8, 8);
+    if (!(spr && foe.sprite && spr(foe.sprite, fx, fy + 30, foeFlash > 0 ? 3 : 0, 2.6))) {
+      c.fillStyle = foeFlash > 0 ? '#f4eee0' : foe.color; c.fillRect(fx - 26, fy - 34, 52, 64);
+      c.fillStyle = '#0c0e12'; c.fillRect(fx - 14, fy - 18, 8, 8); c.fillRect(fx + 6, fy - 18, 8, 8);
+    }
     // hero (left)
     const hx = Math.round(W * 0.26), hy = Math.round(H * 0.5);
     c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(hx, hy + 24, 24, 7, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = heroFlash > 0 ? '#f4eee0' : '#5a6b9e'; c.fillRect(hx - 18, hy - 26, 36, 50);
-    c.fillStyle = '#e4cdae'; c.fillRect(hx - 11, hy - 38, 22, 14);
+    if (!(spr && spr('player', hx, hy + 24, heroFlash > 0 ? 3 : 0, 2.2))) {
+      c.fillStyle = heroFlash > 0 ? '#f4eee0' : '#5a6b9e'; c.fillRect(hx - 18, hy - 26, 36, 50);
+      c.fillStyle = '#e4cdae'; c.fillRect(hx - 11, hy - 38, 22, 14);
+    }
     if (hero.guarding) { c.strokeStyle = '#9eb4ff'; c.lineWidth = 2; c.strokeRect(hx - 22, hy - 42, 44, 70); }
     // name + HP plates
     c.font = '12px ui-monospace,monospace'; c.textAlign = 'left';

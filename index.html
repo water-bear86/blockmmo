@@ -858,16 +858,16 @@ const BATTLE_LEVEL={id:'a1-mempool-yard',name:'Mempool Yard',width:1500,height:9
   creatures:{hollow:{hp:22,speed:46,damage:3,reach:18,radius:10,color:'#7c3936'},hound:{hp:16,speed:74,damage:2,reach:16,radius:9,color:'#c66c34'},knight:{hp:36,speed:35,damage:5,reach:20,radius:12,color:'#8e969b'},default:{hp:18,speed:42,damage:2,reach:16,radius:10,color:'#8c7650'}},
   zones:[{id:'west-tablets',x:120,y:250,w:380,h:280,regen:9,clearFor:14},{id:'east-ledger',x:760,y:220,w:430,h:320,regen:7,clearFor:16},{id:'south-well',x:500,y:590,w:420,h:230,regen:11,clearFor:12}],
   waves:[{id:'first-debtors',at:0.4,zoneId:'west-tablets',spawns:[{type:'hollow',x:340,y:330,count:3},{type:'hound',x:390,y:455,count:1}]},{id:'ledger-knights',at:5.5,zoneId:'east-ledger',spawns:[{type:'knight',x:870,y:320,count:2},{type:'hollow',x:1030,y:440,count:3}]},{id:'well-surge',at:10.5,zoneId:'south-well',spawns:[{type:'hound',x:630,y:690,count:3},{type:'hollow',x:760,y:710,count:3}]}]};
-const TURN_ENCOUNTER={id:'duel-demo',name:'Sparring',opponent:{name:'Hollow Duelist',hp:64,attack:9,defense:1,color:'#7c3936'}};
+const TURN_ENCOUNTER={id:'duel-demo',name:'Sparring',opponent:{name:'Hollow Duelist',hp:64,attack:9,defense:1,color:'#7c3936',sprite:'hollow'}};
 const BOSS_SCRIPT={id:'gate-sexton-marrow',name:'Gate Sexton Marrow',beat:0.8,segments:[
   {mode:'platformer',name:'Parish Road approach',payload:PLAT_LEVEL,beatText:'The tithe-house gate looms...',complete:{event:'boss'}},
   {mode:'battlefield',name:'Tithe-house yard',payload:BATTLE_LEVEL,beatText:'The Sexton stamps the dead awake.',complete:{event:'cleared'}},
   {mode:'turnbased',name:'Marrow, face to face',payload:TURN_ENCOUNTER,beatText:'He raises the ledger-stamp.',complete:{event:'duel'}}
 ]};
 /* Area 1 bosses as story-gated, multi-play-style encounters (bible: Gracefall Parish). */
-const TURN_SEXTON={id:'duel-sexton',name:'Gate Sexton Marrow',opponent:{name:'Gate Sexton Marrow',hp:96,attack:14,defense:2,color:'#d8b36b'}};
-const TURN_WARDEN={id:'duel-warden',name:'Mempool Warden',opponent:{name:'Mempool Warden',hp:92,attack:13,defense:1,color:'#b88cff'}};
-const TURN_TALLOW={id:'duel-tallow',name:'Mother Tallow',opponent:{name:'Mother Tallow',hp:150,attack:18,defense:3,color:'#f1c75b'}};
+const TURN_SEXTON={id:'duel-sexton',name:'Gate Sexton Marrow',opponent:{name:'Gate Sexton Marrow',hp:96,attack:14,defense:2,color:'#d8b36b',sprite:'knight'}};
+const TURN_WARDEN={id:'duel-warden',name:'Mempool Warden',opponent:{name:'Mempool Warden',hp:92,attack:13,defense:1,color:'#b88cff',sprite:'sorcerer'}};
+const TURN_TALLOW={id:'duel-tallow',name:'Mother Tallow',opponent:{name:'Mother Tallow',hp:150,attack:18,defense:3,color:'#f1c75b',sprite:'sentinel'}};
 const AREA1_ENCOUNTERS={
   sexton:{id:'gate-sexton-marrow',name:'Gate Sexton Marrow',beat:0.8,segments:[
     {mode:'platformer',name:'Parish Road approach',payload:PLAT_LEVEL,beatText:'The tithe-house gate looms...',complete:{event:'boss'}},
@@ -942,7 +942,7 @@ function updateEngineMode(dt){
 function startTurnDuel(peerName){
   if(state.mode!=='battlefield'||!RCEngine||!RCEngine.createTurnBasedMode)return;
   const ep=engineApi.player; player.hp=Math.round(ep.hp); player.sta=ep.sta;
-  const enc={id:'pvp-duel',name:'Duel',peerId:peerName||'stub-rival',opponent:{name:(peerName||'Rival')+' Recorded',hp:90,attack:11,defense:1,color:'#6f7db0'}};
+  const enc={id:'pvp-duel',name:'Duel',peerId:peerName||'stub-rival',opponent:{name:(peerName||'Rival')+' Recorded',hp:90,attack:11,defense:1,color:'#6f7db0',sprite:'phantom'}};
   const mode=turnbasedMode=RCEngine.createTurnBasedMode(enc);
   modeManager.setMode(mode, ctx, engineApi); state.mode='turnbased';
   log('Settling accounts — a turn-based duel begins. (T to leave)');
