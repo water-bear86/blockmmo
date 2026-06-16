@@ -10,6 +10,24 @@ const ECON = {
   BURN_ADDR:'BURN', PRIZE_ADDR:'PRIZE_POOL', FEE_ADDR:'FEE', EXCHANGE_ADDR:'EXCHANGE'
 };
 
+const ENEMY_REWARDS = {
+  hollow:{name:'Hollow Debtor', rune:14},
+  hound:{name:'Red Hound', rune:16},
+  knight:{name:'Fallen Knight', rune:26},
+  sorcerer:{name:'Hollow Sorcerer', rune:30},
+  'flying-eye':{name:'Ledger Eye', rune:20},
+  mushroom:{name:'Spore Debtor', rune:18},
+  sexton:{name:'Gate Sexton Marrow', rune:34},
+  mempool:{name:'Mempool Warden', rune:42},
+  tallow:{name:'Mother Tallow', rune:100},
+  foreman:{name:'The Debt Foreman', rune:68},
+  bifurcated:{name:'Bifurcated Guard', rune:58},
+  ledgerbound:{name:'The Ledger-Bound', rune:160},
+  scrivener:{name:'The Scrivener', rune:88},
+  cascade:{name:'Cascade Anchor', rune:108},
+  auditor:{name:'The Auditor', rune:300}
+};
+
 const STORY = root.RUNECHAIN_STORY || {
   version:1,
   startQuest:'q01',
@@ -397,7 +415,7 @@ const AREA3_ENCOUNTERS={
 };
 
   return {
-    ECON, STORY, RELICS, SIGILS, SKINS, ASSETS,
+    ECON, ENEMY_REWARDS, STORY, RELICS, SIGILS, SKINS, ASSETS,
     PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
     TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
     PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,

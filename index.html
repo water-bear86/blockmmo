@@ -243,6 +243,15 @@ const {
 const SHA256 = window.RUNECHAIN_SHA256;
 const Chain = window.RUNECHAIN_CHAIN.createChain({ sha256: SHA256, onBlockMined(block) { Net.gossipBlock(block); } });
 
+function awardRune(source, amt, note){
+  if(Net.requestRuneReward(source)){
+    log('RUNE reward queued for server-verified mining.');
+    return false;
+  }
+  Chain.reward(player.name,amt,note);
+  return true;
+}
+
 const Econ = {
   goldSpendable(name){ return Chain.spendable(name,'GOLD'); },
   goldPending(name){ return Chain.pendingCredit(name,'GOLD'); },
@@ -298,7 +307,7 @@ const Story=(function(){
     if(q && state.stepIndex>=q.steps.length){
       state.completed.push(q.id);
       say(q.onComplete);
-      if(q.rewards&&q.rewards.rune)Chain.reward(player.name,q.rewards.rune,'story: '+q.title);
+      if(q.rewards&&q.rewards.rune)awardRune({type:'story',questId:q.id},q.rewards.rune,'story: '+q.title);
       if(q.next){
         state.activeQuestId=q.next;
         state.stepIndex=0;
@@ -513,9 +522,9 @@ function killEnemy(e){
   if(e.key==='hollow')progress.hollows++;
   const bonus=itemBonuses();
   const reward=+(e.type.reward*(1+bonus.runeMult+(player.runeMult||0))).toFixed(2);
-  Chain.reward(player.name,reward,e.type.name+' slain');
+  const localReward=awardRune({type:'enemy',key:e.key},reward,e.type.name+' slain');
   Story.event('kill',{key:e.key});
-  log('<b>'+esc(e.type.name)+'</b> slain. +'+reward.toFixed(2)+' RUNE pending.');
+  log('<b>'+esc(e.type.name)+'</b> slain. '+(localReward?'+'+reward.toFixed(2)+' RUNE pending.':'RUNE proof requested from the realm server.'));
   if(e.type.boss){
     const rune={id:e.key+'-'+Date.now(),name:e.type.sigilName||e.type.name+' Sigil',key:e.type.sigilKey||null,buff:e.type.sigilKey?0:(e.type.sigilBuff||12)};
     Chain.mintGreatRune(player.name,rune);
@@ -913,7 +922,8 @@ function flashBar(id){ const el=document.getElementById(id); el.style.filter='br
 
 /* ----------------------------- Networking ------------------------------- */
 const Net=(function(){
-  let ws=null, connected=false, id=Math.random().toString(36).slice(2,8), sendTimer=0;
+  let ws=null, connected=false, id=Math.random().toString(36).slice(2,8), sendTimer=0, activeWork=null, submittedWork=null, awaitingWork=false, pendingSource=null;
+  const rewardQueue=[];
   function connect(){
     try{
       if(!location.host)throw new Error('file mode');
@@ -929,12 +939,39 @@ const Net=(function(){
         }
         if(m.t==='leave'){ delete remotes[m.id]; updatePeers(); }
         if(m.t==='block'&&Chain.acceptRemote(m.block))log('Received a mined block from a peer.');
+        if(m.t==='mine:work'){
+          awaitingWork=false;
+          activeWork=m.work;
+          activeWork.source=pendingSource;
+          pendingSource=null;
+        }
+        if(m.t==='mine:accepted'){
+          submittedWork=null;
+          if(Chain.acceptRemote(m.block))log('Server accepted mined reward block #'+m.block.index+'.');
+          requestNextRewardWork();
+        }
+        if(m.t==='mine:error'){
+          const code=m.error&&m.error.code;
+          const retrySource=(activeWork||submittedWork)&&(activeWork||submittedWork).source;
+          if(retrySource&&isStaleMiningError(code)){
+            rewardQueue.unshift(retrySource);
+          }else if(pendingSource&&code!=='invalid_reward_source'){
+            rewardQueue.unshift(pendingSource);
+          }
+          activeWork=null;
+          submittedWork=null;
+          pendingSource=null;
+          awaitingWork=false;
+          if(m.chain)Chain.replaceFromAuthority(m.chain);
+          log('Server rejected mining work: '+esc(code||'unknown'));
+          requestNextRewardWork();
+        }
         if(m.t==='block:error'){
           if(Chain.replaceFromAuthority(m.chain))log('Server rejected a local block; synced to the authoritative Chainwell.');
         }
         if(m.t==='chain')Chain.replaceFromAuthority(m.chain);
       };
-      ws.onclose=()=>{ if(connected)log('Realm server lost. Solo mode.'); connected=false; updatePeers(); };
+      ws.onclose=()=>{ if(connected)log('Realm server lost. Solo mode.'); connected=false; awaitingWork=false; activeWork=null; submittedWork=null; pendingSource=null; updatePeers(); };
       ws.onerror=()=>{ try{ws.close();}catch(_){} };
     }catch(_){ connected=false; updatePeers(); }
     setTimeout(()=>{ if(!connected)updatePeers(); },900);
@@ -949,6 +986,39 @@ const Net=(function(){
       }
     }
   }
+  function requestRuneReward(source){
+    if(!connected||!ws||ws.readyState!==1)return false;
+    rewardQueue.push(source);
+    requestNextRewardWork();
+    return true;
+  }
+  function requestNextRewardWork(){
+    if(!connected||!ws||ws.readyState!==1||awaitingWork||activeWork||submittedWork)return;
+    pendingSource=rewardQueue.shift()||null;
+    if(!pendingSource)return;
+    awaitingWork=true;
+    ws.send(JSON.stringify({t:'mine:reward',id,source:pendingSource}));
+  }
+  function isStaleMiningError(code){
+    return code==='invalid_block_index'||code==='invalid_block_parent'||code==='invalid_block_time';
+  }
+  function mineAuthorized(budget){
+    if(!connected||!ws||ws.readyState!==1)return null;
+    if(!activeWork)return null;
+    const block=activeWork.block, target='0'.repeat(activeWork.difficulty);
+    for(let i=0;i<budget;i++){
+      block.hash=window.RUNECHAIN_CHAIN.hashBlock(block,SHA256);
+      if(block.hash.startsWith(target)){
+        ws.send(JSON.stringify({t:'mine:submit',id,candidateId:activeWork.candidateId,block}));
+        const mined=block;
+        submittedWork=activeWork;
+        activeWork=null;
+        return mined;
+      }
+      block.nonce++;
+    }
+    return null;
+  }
   function gossipBlock(block){ if(connected&&ws&&ws.readyState===1)ws.send(JSON.stringify({t:'block',id,block})); }
   function updatePeers(){
     const el=document.getElementById('peerlist'); el.innerHTML='';
@@ -957,7 +1027,7 @@ const Net=(function(){
     if(!connected&&!rs.length){ const d=document.createElement('div'); d.className='peerline'; d.innerHTML='<span class="dot local"></span>Solo mode'; el.appendChild(d); return; }
     for(const r of rs){ const d=document.createElement('div'); d.className='peerline'; d.innerHTML='<span class="dot"></span>'+esc(r.name); el.appendChild(d); }
   }
-  return {connect,tick,gossipBlock,updatePeers,get connected(){return connected;}};
+  return {connect,tick,mineAuthorized,requestRuneReward,gossipBlock,updatePeers,get connected(){return connected;}};
 })();
 
 /* ----------------------------- Update loop ------------------------------ */
@@ -999,7 +1069,9 @@ function update(dt){
     resolveSeparation();
     updateParticles(dt);
     Net.tick(dt);
-    const mined=Chain.tick(900);
+    const authMined=Net.mineAuthorized(900);
+    if(authMined)log('Mined server-authorized reward block #'+authMined.index+' - awaiting validation.');
+    const mined=Net.connected?null:Chain.tick(900);
     Chain.updateHashrate(dt);
     if(mined)log('Mined block #'+mined.index+' - '+mined.txs.length+' tx confirmed.');
     if(sigilSig()!==player.sigilSig)recalcStats(false);

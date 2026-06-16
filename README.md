@@ -2,8 +2,8 @@
 
 A tiny **pixel Soulslike MMO** set in **Gracefall Parish**: a ruined, cozy-gothic
 top-down RPG space with a real on-chain economy. Monsters drop RUNE, your own browser
-mines it into a genuine SHA-256 proof-of-work chain, and you spend it (recorded as
-on-chain transactions) to level up at **Hearthlight**. Bosses mint deterministic
+mines server-issued reward work into a genuine SHA-256 proof-of-work chain, and you
+spend it (recorded as on-chain transactions) to level up at **Hearthlight**. Bosses mint deterministic
 **Boss Sigils** as one-of-a-kind on-chain assets.
 
 It's a tiny no-build browser client (`index.html` plus plain scripts in `game/` and
@@ -97,7 +97,8 @@ lives in the `ECON`, `SKINS`, and `RELICS` tables in [`game/content.js`](game/co
   with two one-way on-ramps (RUNE→Gold, or wrapped-SOL split 50% prize / 35% burn / 15% fee).
   Equipped skins sync over the network, so other Recorded players see what you're wearing.
 - **A real blockchain economy** — from-scratch SHA-256 proof-of-work chain (verified
-  against Node's `crypto`), credits from kills, on-chain debits when levelling,
+  against Node's `crypto`), server-issued RUNE reward work in connected realms,
+  local prototype mining in solo mode, on-chain debits when levelling,
   unique Boss Sigil assets, and pending-debit anti-double-spend accounting. Blocks
   gossip across the network so the realm converges on one ledger.
 - **MMO server** — `server.js` is an authoritative relay implementing WebSocket and

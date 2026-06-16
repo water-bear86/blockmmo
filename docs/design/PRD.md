@@ -190,7 +190,9 @@ proposed revision. See Conflict Register C3.
 Two currencies, and the line between them is the design.
 
 - **RUNE** — grind/power currency. Browser-mined via SHA-256 PoW, recorded on the
-  Chainwell. Powers leveling and relics. **Never for sale.** Also the death-recovery sink (F4).
+  Chainwell. In connected realms, reward credits are server-issued work that the browser
+  mines and the server re-verifies before append; local solo mode keeps prototype local
+  mining. Powers leveling and relics. **Never for sale.** Also the death-recovery sink (F4).
 - **Gold** — the real-money-adjacent currency. Funds cosmetics **and** the capped grind
   acceleration (U3). Two one-way on-ramps fill it; there is no Gold cash-out.
 
@@ -335,8 +337,9 @@ to F6.3). *Not legal advice; flagged so it is not a silent omission.*
   acceptable as a demo are **must-fix** now that this is the permanent ledger of record:
   the server **trusts client block validation** ("trust client validation for this demo"
   and keeps the longest chain) — an exploit surface for forged balances; and browser-side
-  PoW mining as the credit mechanism invites client tampering. Both are addressed by the
-  server-authority work below.
+  PoW mining as the credit mechanism invites client tampering. Block validation and RUNE
+  reward minting now move through server validation; full gameplay outcome authority
+  remains the broader server-authority migration below.
 
 ---
 
@@ -356,11 +359,20 @@ to F6.3). *Not legal advice; flagged so it is not a silent omission.*
 - **S2.3 — Client stays thin and buildless.** Moving authority to the server *removes* state
   ownership from the client; it does not add a client build step (see Architecture
   Constraints). If anything the client gets thinner: propose + render.
+- **S2.4 — Browser mining stays, reward authority moves server-side. [DECIDED][IMPLEMENTED]**
+  Q-S2b uses the hybrid model: the client asks for reward work (`mine:reward`), the server
+  constructs the exact RUNE reward candidate (`mine:work`), the browser searches the nonce,
+  and the server re-validates the submitted block (`mine:submit`) before appending it.
+  Raw client-authored positive RUNE credits to value recipients are rejected, including
+  forged transfers that try to add a fake `from` account. The client does not run local
+  Chainwell mining while connected, so online reward credits flow through server-issued PoW.
+- **S2.5 — Remaining authority scope. [OPEN]** The Q-S2b implementation closes the PoW
+  credit-tampering path, not every gameplay proof. Reward-source proof is still coarse
+  until the broader S2/U7 migration validates kills, quest completion, level/relic spends,
+  death recovery, character state, and PvP outcomes server-side.
 
-**Open.**
+**Open / remaining.**
 - **Q-S2a [OPEN]** Block-validation rules for the authoritative Chainwell.
-- **Q-S2b [OPEN]** Anti-cheat for browser-side PoW mining (or whether mining moves
-  server-side / becomes server-verified).
 - **Q-S2c [OPEN]** Turn-arbitration protocol for turn-based PvP (turn submission, ordering,
   resolution, timeout/forfeit) — a meaningfully different networking shape from the current
   rebroadcast relay.
@@ -415,7 +427,6 @@ Consolidated. Each is referenced inline above.
 | Q-F7b | Transfer-gating mechanism: transfer-hook vs. escrow-program | Architecture |
 | Q-A1 | What "account" binds to for U6; sybil/multi-wallet handling | Design/Compliance |
 | Q-S2a | Block-validation rules for the authoritative Chainwell | Architecture |
-| Q-S2b | Anti-cheat for browser PoW mining (or move server-side) | Architecture |
 | Q-S2c | Turn-arbitration protocol for turn-based PvP | Architecture |
 
 ---

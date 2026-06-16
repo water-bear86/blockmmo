@@ -18,9 +18,11 @@ const sha256 = require('./game/sha256.js');
 const {
   DEFAULT_DIFFICULTY,
   createGenesisBlock,
+  hashBlock,
   validateBlockCandidate,
   validateChain,
 } = require('./game/chain.js');
+const { ECON, ENEMY_REWARDS, STORY } = require('./game/content.js');
 
 const DEFAULT_PORT = process.env.PORT || 8080;
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'; // WebSocket magic string
@@ -32,8 +34,11 @@ function createRealmServer(options = {}) {
   const now = typeof options.now === 'function' ? options.now : () => Date.now();
   const saveDelayMs = options.saveDelayMs == null ? 800 : options.saveDelayMs;
   const futureSkewMs = options.futureSkewMs;
+  const miningTtlMs = options.miningTtlMs == null ? 30000 : options.miningTtlMs;
   const quiet = !!options.quiet;
   const clients = new Set();
+  const pendingMining = new Map();
+  const runeCreditSinks = new Set(['POWER_SINK', ECON.EXCHANGE_ADDR]);
   let saveTimer = null;
   let masterChain = loadLedger();
 
@@ -146,6 +151,10 @@ function createRealmServer(options = {}) {
         send(client, { t: 'block:error', error: result.error, chain: masterChain });
         return result;
       }
+      case 'mine:reward':
+        return issueRewardMiningWork(client, message.source);
+      case 'mine:submit':
+        return acceptMinedWork(client, message.candidateId, message.block);
       default:
         return { ok: false, error: { code: 'unknown_message_type', message: 'Unknown message type.' } };
     }
@@ -186,11 +195,161 @@ function createRealmServer(options = {}) {
     const tip = masterChain[masterChain.length - 1];
     const result = validateBlockCandidate(block, tip, { sha256, difficulty, now, futureSkewMs });
     if (!result.ok) return result;
+    const auth = validateSubmittedTransactions(block);
+    if (!auth.ok) return auth;
 
+    return appendBlock(block);
+  }
+
+  function appendBlock(block) {
     masterChain.push(block);
     log(`chain block #${block.index} accepted - ${block.txs ? block.txs.length : 0} tx`);
     saveLedger();
     return { ok: true, block };
+  }
+
+  function issueRewardMiningWork(client, source) {
+    cleanupMiningCandidates();
+    const pendingCandidate = findPendingCandidateForClient(client.id);
+    if (pendingCandidate) {
+      const result = blockError('mining_candidate_pending', 'Finish the current server-issued mining candidate before requesting another.');
+      send(client, { t: 'mine:error', error: result.error });
+      return result;
+    }
+
+    const reward = resolveRewardSource(source);
+    if (!reward.ok) {
+      send(client, { t: 'mine:error', error: reward.error });
+      return reward;
+    }
+
+    const candidateId = 'srv-' + crypto.randomBytes(8).toString('hex');
+    const tx = {
+      to: client.name || 'Recorded',
+      amt: reward.amt,
+      note: reward.note,
+      cur: 'RUNE',
+      id: candidateId,
+      auth: { type: 'server-reward', source: reward.sourceKey },
+    };
+    const tip = masterChain[masterChain.length - 1];
+    const block = {
+      index: tip.index + 1,
+      prev: tip.hash,
+      time: now(),
+      txs: [tx],
+      nonce: 0,
+    };
+    block.hash = hashBlock(block, sha256);
+
+    const work = { candidateId, difficulty, block };
+    pendingMining.set(candidateId, {
+      clientId: client.id,
+      block,
+      createdAt: now(),
+    });
+    send(client, { t: 'mine:work', work });
+    return { ok: true, work };
+  }
+
+  function acceptMinedWork(client, candidateId, block) {
+    cleanupMiningCandidates();
+    const candidate = pendingMining.get(candidateId);
+    if (!candidate || candidate.clientId !== client.id) {
+      const result = blockError('unknown_mining_candidate', 'Mining candidate is unknown or no longer valid.');
+      send(client, { t: 'mine:error', error: result.error, chain: masterChain });
+      return result;
+    }
+
+    if (!matchesMiningCandidate(candidate.block, block)) {
+      const result = blockError('invalid_mining_candidate', 'Submitted block does not match the server-issued mining candidate.');
+      send(client, { t: 'mine:error', error: result.error, chain: masterChain });
+      return result;
+    }
+
+    const tip = masterChain[masterChain.length - 1];
+    const result = validateBlockCandidate(block, tip, { sha256, difficulty, now, futureSkewMs });
+    if (!result.ok) {
+      if (isStaleCandidateError(result.error.code)) pendingMining.delete(candidateId);
+      send(client, { t: 'mine:error', error: result.error, chain: masterChain });
+      return result;
+    }
+
+    pendingMining.delete(candidateId);
+    const accepted = appendBlock(block);
+    send(client, { t: 'mine:accepted', block });
+    broadcast({ t: 'block', block }, client);
+    return accepted;
+  }
+
+  function validateSubmittedTransactions(block) {
+    for (const tx of block.txs || []) {
+      if (isUnauthorizedRuneCredit(tx)) {
+        return blockError('unauthorized_rune_credit', 'RUNE credits must be mined from server-issued reward work.');
+      }
+    }
+    return { ok: true };
+  }
+
+  function isUnauthorizedRuneCredit(tx) {
+    if (!tx || (tx.cur || 'RUNE') !== 'RUNE' || !tx.to || !(Number(tx.amt) > 0)) return false;
+    return !runeCreditSinks.has(tx.to);
+  }
+
+  function findPendingCandidateForClient(clientId) {
+    for (const [candidateId, candidate] of pendingMining) {
+      if (candidate.clientId === clientId) return { candidateId, candidate };
+    }
+    return null;
+  }
+
+  function cleanupMiningCandidates() {
+    const cutoff = now() - miningTtlMs;
+    for (const [candidateId, candidate] of pendingMining) {
+      if (candidate.createdAt < cutoff) pendingMining.delete(candidateId);
+    }
+  }
+
+  function isStaleCandidateError(code) {
+    return code === 'invalid_block_index' || code === 'invalid_block_parent' || code === 'invalid_block_time';
+  }
+
+  function matchesMiningCandidate(candidateBlock, submittedBlock) {
+    if (!submittedBlock || typeof submittedBlock !== 'object') return false;
+    return submittedBlock.index === candidateBlock.index &&
+      submittedBlock.prev === candidateBlock.prev &&
+      submittedBlock.time === candidateBlock.time &&
+      JSON.stringify(submittedBlock.txs) === JSON.stringify(candidateBlock.txs);
+  }
+
+  function resolveRewardSource(source) {
+    if (!source || typeof source !== 'object') return blockError('invalid_reward_source', 'Reward source is required.');
+    if (source.type === 'enemy') {
+      const enemy = ENEMY_REWARDS[source.key];
+      if (!enemy) return blockError('invalid_reward_source', 'Unknown enemy reward source.');
+      return {
+        ok: true,
+        amt: enemy.rune,
+        note: enemy.name + ' slain',
+        sourceKey: 'enemy:' + source.key,
+      };
+    }
+    if (source.type === 'story') {
+      const quest = (STORY.quests || []).find(q => q.id === source.questId);
+      const rune = quest && quest.rewards && quest.rewards.rune;
+      if (!quest || !rune) return blockError('invalid_reward_source', 'Unknown story reward source.');
+      return {
+        ok: true,
+        amt: rune,
+        note: 'story: ' + quest.title,
+        sourceKey: 'story:' + quest.id,
+      };
+    }
+    return blockError('invalid_reward_source', 'Unsupported reward source type.');
+  }
+
+  function blockError(code, message) {
+    return { ok: false, error: { code, message } };
   }
 
   function broadcast(obj, except) {
