@@ -17,7 +17,7 @@ on:
         type: string
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: ca-west-1
   ECR_REPOSITORY: runechain
   ECS_SERVICE: runechain-service
   ECS_CLUSTER: runechain-cluster
@@ -94,6 +94,28 @@ jobs:
         container-name: ${{ env.CONTAINER_NAME }}
         image: ${{ steps.build-image.outputs.image }}
 
+    - name: Create ECS service if missing
+      run: |
+        STATUS=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE \
+          --query 'services[0].status' --output text 2>/dev/null || echo "NONE")
+        if [ "$STATUS" = "ACTIVE" ]; then
+          echo "Service already exists — the deploy step will update it."
+          exit 0
+        fi
+        echo "Service not found (status=$STATUS) — creating it (no load balancer, public IP)."
+        VPC=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
+        SUBNETS=$(aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC \
+          --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+        SG=$(aws ec2 describe-security-groups --filters Name=group-name,Values=runechain-sg Name=vpc-id,Values=$VPC \
+          --query 'SecurityGroups[0].GroupId' --output text)
+        TD_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://${{ steps.task-def.outputs.task-definition }} \
+          --query 'taskDefinition.taskDefinitionArn' --output text)
+        aws ecs create-service \
+          --cluster $ECS_CLUSTER --service-name $ECS_SERVICE \
+          --task-definition "$TD_ARN" --desired-count 1 --launch-type FARGATE \
+          --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=ENABLED}"
+
     - name: Deploy Amazon ECS task definition
       uses: aws-actions/amazon-ecs-deploy-task-definition@v1
       with:
@@ -105,21 +127,15 @@ jobs:
     - name: Get service URL
       id: service-url
       run: |
-        # Get the load balancer DNS name from the ECS service
-        echo "Waiting for service to be available..."
-        sleep 10
-
-        # Get the load balancer ARN from the ECS service
-        LB_ARN=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE --query 'services[0].loadBalancers[0].targetGroupArn' --output text)
-
-        if [ "$LB_ARN" != "None" ] && [ "$LB_ARN" != "" ]; then
-          # Get the load balancer DNS name
-          LB_DNS=$(aws elbv2 describe-target-groups --target-group-arns $LB_ARN --query 'TargetGroups[0].LoadBalancerArns[0]' --output text | xargs -I {} aws elbv2 describe-load-balancers --load-balancer-arns {} --query 'LoadBalancers[0].DNSName' --output text)
-          echo "url=http://$LB_DNS" >> $GITHUB_OUTPUT
-        else
-          echo "No load balancer found, skipping URL retrieval"
-          echo "url=http://localhost:8080" >> $GITHUB_OUTPUT
-        fi
+        # No load balancer — read the running task's public IP directly.
+        TASK=$(aws ecs list-tasks --cluster $ECS_CLUSTER --service-name $ECS_SERVICE \
+          --desired-status RUNNING --query 'taskArns[0]' --output text)
+        ENI=$(aws ecs describe-tasks --cluster $ECS_CLUSTER --tasks "$TASK" \
+          --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value | [0]" --output text)
+        IP=$(aws ec2 describe-network-interfaces --network-interface-ids "$ENI" \
+          --query 'NetworkInterfaces[0].Association.PublicIp' --output text)
+        echo "Task public IP: $IP"
+        echo "url=http://$IP:8080" >> $GITHUB_OUTPUT
 
     - name: Verify deployment
       run: |

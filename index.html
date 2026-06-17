@@ -50,7 +50,9 @@
   #peers{right:12px;bottom:12px;width:225px;padding:10px;background:rgba(13,15,18,.78);border:2px solid var(--line);
     box-shadow:0 0 0 2px #050607;font-size:12px}
   .peerline{display:flex;align-items:center;gap:6px;margin:3px 0;color:#d9d1be}
-  .dot{width:8px;height:8px;background:var(--sta);box-shadow:0 0 7px var(--sta)}
+  .dot{width:7px;height:7px;background:var(--rune);box-shadow:0 0 8px var(--rune);display:inline-block}
+  .dot.encounter{background:var(--gold);box-shadow:0 0 8px rgba(241,199,91,.7)}
+  .peerstate{margin-left:auto;color:#9f967f;font-size:10px;text-transform:uppercase;letter-spacing:.08em}
   .dot.local{background:#7a7f86;box-shadow:none}
   #log{top:12px;right:12px;width:min(360px,calc(100vw - 24px));font-size:11px;color:#d8d0bd;text-align:right}
   #log div{display:inline-block;max-width:100%;margin:0 0 5px;padding:5px 7px;background:rgba(7,8,10,.64);
@@ -152,8 +154,8 @@
   <div class="row"><span>Difficulty</span><b id="diff">3 nibbles</b></div>
   <div class="row"><span>Hashrate</span><b id="hr">0 H/s</b></div>
   <div class="row split"><span>Burned wSOL</span><b id="burned">0.0000</b></div>
-  <div class="row"><span>Prize pool</span><b id="prizepool">0.0000</b></div>
-  <div class="row"><span>Fees</span><b id="feepool">0.0000</b></div>
+  <div class="row"><span>Marketing fund</span><b id="marketingpool">0.0000</b></div>
+  <div class="row"><span>Ops fee</span><b id="opspool">0.0000</b></div>
   <div id="chain"></div>
 </div>
 
@@ -197,7 +199,7 @@
       <button id="wBuy" class="econbtn pay">Buy Gold - 1 wSOL</button>
     </div>
     <div id="wlist" class="wlist"></div>
-    <div class="econnote">Direct purchase, no loot boxes. Each wSOL split is 50% prize pool, 35% burn, 15% fee. Devnet mock only.</div>
+    <div class="econnote">Direct purchase, no loot boxes. Gold buys cosmetics only. Each mock wSOL split is 50% burn, 35% marketing, 15% ops fee. Devnet mock only.</div>
     <button id="wclose">Close (B)</button>
   </div>
 </div>
@@ -270,10 +272,10 @@ const Econ = {
   buyGoldWithSol(name, sol){
     if(sol<=0)return 0;
     const gold=+(sol*ECON.GOLD_PER_SOL).toFixed(2);
-    Chain.credit(name,gold,`bought with ${sol} wSOL`,'GOLD');
+    Chain.credit(name,gold,`bought with ${sol} mock wSOL`,'GOLD');
     Chain.credit(ECON.BURN_ADDR,sol*ECON.SPLIT.burn,'burned','SOL');
-    Chain.credit(ECON.PRIZE_ADDR,sol*ECON.SPLIT.prize,'prize pool','SOL');
-    Chain.credit(ECON.FEE_ADDR,sol*ECON.SPLIT.fee,'fee','SOL');
+    Chain.credit(ECON.MARKETING_ADDR,sol*ECON.SPLIT.marketing,'marketing','SOL');
+    Chain.credit(ECON.OPS_ADDR,sol*ECON.SPLIT.ops,'ops fee','SOL');
     return gold;
   },
   spendGold(name, amt, note){ Chain.debit(name,amt,note,'GOLD','GOLD_SINK'); }
@@ -726,7 +728,7 @@ function enterEngineMode(name){
   if(name==='battlefield')mode=battlefieldMode=RCEngine.createBattlefieldMode(BATTLE_LEVEL);
   else if(name==='turnbased')mode=turnbasedMode=RCEngine.createTurnBasedMode(TURN_ENCOUNTER);
   else mode=platformerMode=RCEngine.createPlatformerMode(PLAT_LEVEL);
-  modeManager.setMode(mode, ctx, engineApi); state.mode=name;
+  modeManager.setMode(mode, ctx, engineApi); state.mode=name; Net.updatePeers();
   log(name==='battlefield'?'Mempool Yard — survive the waves. (T to leave)':name==='turnbased'?'A duel begins — Up/Down choose, J/Space confirm. (T to leave)':'Parish Road Receipts — reach the gate. (T to leave)');
 }
 function exitEngineMode(){
@@ -734,7 +736,7 @@ function exitEngineMode(){
   if(state.mode==='town')return;
   if(modeManager)modeManager.setMode(null, ctx, engineApi);
   player.hp=Math.max(1,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
-  state.mode='town'; log('Returned to Hearthlight.');
+  state.mode='town'; Net.updatePeers(); log('Returned to Hearthlight.');
 }
 function updateEngineMode(dt){
   modeManager.update(dt, engineInput());
@@ -753,7 +755,7 @@ function startTurnDuel(peerName){
   const ep=engineApi.player; player.hp=Math.round(ep.hp); player.sta=ep.sta;
   const enc={id:'pvp-duel',name:'Duel',peerId:peerName||'stub-rival',opponent:{name:(peerName||'Rival')+' Recorded',hp:90,attack:11,defense:1,color:'#6f7db0',sprite:'phantom'}};
   const mode=turnbasedMode=RCEngine.createTurnBasedMode(enc);
-  modeManager.setMode(mode, ctx, engineApi); state.mode='turnbased';
+  modeManager.setMode(mode, ctx, engineApi); state.mode='turnbased'; Net.updatePeers();
   log('Settling accounts — a turn-based duel begins. (T to leave)');
 }
 function startSegmentMode(seg){
@@ -769,13 +771,13 @@ function enterBossSequence(){
   const ep=engineApi.player; ep.maxHp=player.maxHp; ep.maxSta=player.maxSta; ep.hp=player.hp; ep.sta=player.sta; ep.name=player.name;
   bossSeq=RCEngine.createSegmentSequencer(BOSS_SCRIPT);
   bossSeq.enter(engineApi, { startMode:startSegmentMode, exitMode(){ if(modeManager)modeManager.setMode(null, ctx, engineApi); }, log:(m)=>log(m) });
-  state.mode='sequencer';
+  state.mode='sequencer'; Net.updatePeers();
   log('Boss encounter: '+(BOSS_SCRIPT.name||'')+'. (T to abandon)');
 }
 function endBossSequence(){
   if(modeManager)modeManager.setMode(null, ctx, engineApi);
   player.hp=Math.max(1,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
-  bossSeq=null; bossEncounterEnemy=null; state.mode='town';
+  bossSeq=null; bossEncounterEnemy=null; state.mode='town'; Net.updatePeers();
 }
 const BOSS_ENCOUNTER_KEYS=['sexton','mempool','tallow','foreman','bifurcated','ledgerbound','scrivener','cascade','auditor'];
 function nearestBossEncounter(){
@@ -793,9 +795,21 @@ function startBossEncounter(enemy){
   if(state.graceOpen)closeGrace(); if(state.wardrobeOpen)closeWardrobe();
   const ep=engineApi.player; ep.maxHp=player.maxHp; ep.maxSta=player.maxSta; ep.hp=player.hp; ep.sta=player.sta; ep.name=player.name;
   bossEncounterEnemy=enemy;
-  bossSeq=RCEngine.createSegmentSequencer(script);
+  // Keeper-of-Margins side-quest: re-inscribing the margin-scroll (optional q06 interaction)
+  // weakens the Debt Foreman => two difficulty states. Shallow-clone the script; never mutate AREA2_ENCOUNTERS.
+  let useScript=script;
+  if(enemy.key==='foreman'){
+    const weak=progress.interactions.has('q06:margin-scroll');
+    const full={a:{hp:70,label:'CANON',color:'#d4a83e'},b:{hp:70,label:'SCHISM',color:'#4ecb7a'},crossHeal:false};
+    const weakened={a:{hp:50,label:'CANON',color:'#d4a83e'},b:{hp:50,label:'SCHISM',color:'#4ecb7a'},crossHeal:false};
+    useScript=Object.assign({},script,{segments:script.segments.map(s=> s.mode==='turnbased'
+      ? Object.assign({},s,{payload:Object.assign({},s.payload,{dualChain:weak?weakened:full,opponent:Object.assign({},s.payload.opponent,{attack:weak?12:16})})})
+      : s)});
+    log(weak?'The Keeper of Margins has testified — the Foreman is weakened.':'The Foreman stands at full strength.');
+  }
+  bossSeq=RCEngine.createSegmentSequencer(useScript);
   bossSeq.enter(engineApi, { startMode:startSegmentMode, exitMode(){ if(modeManager)modeManager.setMode(null, ctx, engineApi); }, log:(m)=>log(m) });
-  state.mode='sequencer';
+  state.mode='sequencer'; Net.updatePeers();
   log('Encounter: '+script.name+'. (T to retreat)');
 }
 function updateBossSequence(dt){
@@ -1010,6 +1024,10 @@ const Net=(function(){
           let r=remotes[m.id];
           if(!r){ r={id:m.id,name:m.name||'Recorded',x:m.x||0,y:m.z||0,tx:m.x||0,ty:m.z||0,skin:m.skin||'tarnished',moving:false,lastSeen:Date.now()}; remotes[m.id]=r; updatePeers(); }
           r.tx=m.x||0; r.ty=m.z||0; r.skin=m.skin||r.skin; r.moving=!!m.moving; r.dir=m.yaw||0; r.lastSeen=Date.now();
+          if(!r){ r={id:m.id,name:m.name||'Recorded',x:m.x||0,y:m.z||0,tx:m.x||0,ty:m.z||0,skin:m.skin||'tarnished',moving:false,mode:m.mode||'town',encounter:m.encounter||null}; remotes[m.id]=r; updatePeers(); }
+          const oldMode=r.mode, oldEncounter=r.encounter;
+          r.tx=m.x||0; r.ty=m.z||0; r.skin=m.skin||r.skin; r.moving=!!m.moving; r.dir=m.yaw||0; r.mode=m.mode||'town'; r.encounter=m.encounter||null;
+          if(oldMode!==r.mode||oldEncounter!==r.encounter)updatePeers();
         }
         if(m.t==='leave'){ delete remotes[m.id]; updatePeers(); }
         if(m.t==='block'&&Chain.acceptRemote(m.block))log('Received a mined block from a peer.');
@@ -1062,7 +1080,7 @@ const Net=(function(){
       sendTimer+=dt;
       if(sendTimer>.08){
         sendTimer=0;
-        ws.send(JSON.stringify({t:'state',id,name:player.name,skin:player.skinId,x:player.x,y:0,z:player.y,yaw:Math.atan2(player.dirY,player.dirX),moving:player.moving}));
+        ws.send(JSON.stringify({t:'state',id,name:player.name,skin:player.skinId,x:player.x,y:0,z:player.y,yaw:Math.atan2(player.dirY,player.dirX),moving:state.mode==='town'&&player.moving,mode:state.mode==='town'?'town':'encounter',encounter:state.mode==='town'?null:state.mode}));
       }
     }
   }
@@ -1101,10 +1119,11 @@ const Net=(function(){
   }
   function updatePeers(){
     const el=document.getElementById('peerlist'); el.innerHTML='';
-    const me=document.createElement('div'); me.className='peerline'; me.innerHTML='<span class="dot"></span>'+esc(player.name)+' <span style="color:#7d776b">(you)</span>'; el.appendChild(me);
+    const meMode=state.mode==='town'?'town':state.mode;
+    const me=document.createElement('div'); me.className='peerline'; me.innerHTML='<span class="dot '+(state.mode==='town'?'':'encounter')+'"></span>'+esc(player.name)+' <span style="color:#7d776b">(you)</span><span class="peerstate">'+esc(meMode==='town'?'town':'in '+meMode)+'</span>'; el.appendChild(me);
     const rs=Object.values(remotes);
     if(!connected&&!rs.length){ const d=document.createElement('div'); d.className='peerline'; d.innerHTML='<span class="dot local"></span>Solo mode'; el.appendChild(d); return; }
-    for(const r of rs){ const d=document.createElement('div'); d.className='peerline'; d.innerHTML='<span class="dot"></span>'+esc(r.name); el.appendChild(d); }
+    for(const r of rs){ const d=document.createElement('div'); d.className='peerline'; const inEncounter=r.mode&&r.mode!=='town'; d.innerHTML='<span class="dot '+(inEncounter?'encounter':'')+'"></span>'+esc(r.name)+'<span class="peerstate">'+esc(inEncounter?'in '+(r.encounter||'encounter'):'town')+'</span>'; el.appendChild(d); }
   }
   return {connect,tick,mineAuthorized,requestRuneReward,updatePeers,get connected(){return connected;},get authenticated(){return accountReady;}};
 })();
@@ -1174,38 +1193,38 @@ addEventListener('visibilitychange',()=>{ if(!document.hidden)state.last=perform
 
 /* ------------------------------ Drawing --------------------------------- */
 function hash2(x,y){ let n=(x*374761393+y*668265263)^0x5bf03635; n=(n^(n>>>13))*1274126177; return ((n^(n>>>16))>>>0)/4294967295; }
-const TILE_ID={grass:0,grassDark:1,grassFlower:2,cobble:3,cobbleEdge:4,dirt:5,dirtEdge:6,plaza:7,plazaCrack:8,cursed:9,graveDirt:10,shadowGrass:11,water:12,sand:13,chapelWall:14,chapelRoof:15,bramble:16,fenceGround:17,mossStone:18,black:19};
-/* Map each semantic tile to a tile index in the Kenney atlas (tiles-rogue.png, 57 wide).
-   Index = row*ATLAS_COLS + col. Picked by color-matching the atlas (see assets/CREDITS.md). */
-const ATLAS_COLS=57;
-const TILE_TEX=[638,528,743,748,750,292,293,697,702,809,294,585,0,699,703,6,744,638,638,292];
+/* ---- Wang autotiled terrain (PixelLab parish set: assets/pixel/tiles-parish.png) ----
+   Atlas is 16 corner-signature columns x 5 feature rows. Each cell samples its 4 corner
+   terrains; the dominant feature picks the row and the corner pattern picks the column.
+   Grass (id 0) is the universal base — every feature only ever blends against grass. */
+const T_GRASS=0, T_COBBLE=1, T_WATER=2, T_DIRT=3, T_CURSED=4, T_PLAZA=5;
+const WANG_ROW={1:0, 2:1, 3:2, 4:3, 5:4}; // feature terrain id -> atlas row
 const ENTITY_SCALE=1.48;
-function mapTile(tx,ty){
-  const x=tx*TILE+TILE/2, y=ty*TILE+TILE/2, h=hash2(tx,ty);
-  if(x<-250 && y>96)return TILE_ID.water;
-  if(x<-235 && y>72)return TILE_ID.sand;
-  if(Math.hypot(x-GRACE.x,y-GRACE.y)<86)return h>.74?TILE_ID.plazaCrack:TILE_ID.plaza;
-  if(y>=-32 && y<=32)return (ty===-2||ty===2)?TILE_ID.cobbleEdge:TILE_ID.cobble;
-  if(x>-122 && x<82 && y<-74 && y>-170)return h>.6?TILE_ID.shadowGrass:TILE_ID.grassDark;
-  if(x>170 && x<374 && y<-82 && y>-172)return h>.34?TILE_ID.graveDirt:TILE_ID.grassDark;
-  if(x>430 && (h>.56 || y<-80 || y>82))return h>.78?TILE_ID.bramble:TILE_ID.cursed;
-  if((x>-210&&x<-112&&y>48&&y<142)||(x>102&&x<188&&y>70&&y<150))return h>.55?TILE_ID.fenceGround:TILE_ID.grassFlower;
-  if(h>.965)return TILE_ID.grassFlower;
-  if(h<.08)return TILE_ID.shadowGrass;
-  return h<.86?TILE_ID.grass:TILE_ID.grassDark;
+/* Per-vertex terrain. Zones mirror the old mapTile regions but resolve at tile corners
+   so the autotiler can blend their edges. Higher id wins where two zones meet. */
+function terrainAt(vx,vy){
+  const x=vx*TILE, y=vy*TILE, h=hash2(vx,vy);
+  if(x<-250 && y>96) return T_WATER;                       // pond (SW)
+  if(Math.hypot(x-GRACE.x,y-GRACE.y)<86) return T_PLAZA;   // chapel plaza (centre)
+  if(y>=-32 && y<=32) return T_COBBLE;                     // the road
+  if(x>170 && x<374 && y<-82 && y>-172) return T_DIRT;     // graveyard
+  if(x>430 && (h>.5 || y<-80 || y>82)) return T_CURSED;    // cursed badlands (E)
+  return T_GRASS;
 }
-function drawAtlasTile(id,sx,sy){
+const TERRAIN_FALLBACK=['#6c6c6c','#26506b','#5a3f2a','#3a2f44','#b39a5e']; // by row, if no img
+function drawWang(cx,cy,sx,sy){
   const img=ASSETS.tiles&&ASSETS.tiles.img;
-  if(img){
-    const kid=TILE_TEX[id]||0; ctx.drawImage(img,(kid%ATLAS_COLS)*16,Math.floor(kid/ATLAS_COLS)*16,16,16,Math.round(sx),Math.round(sy),16,16);
+  const nw=terrainAt(cx,cy), ne=terrainAt(cx+1,cy), sw=terrainAt(cx,cy+1), se=terrainAt(cx+1,cy+1);
+  if(nw===0&&ne===0&&sw===0&&se===0){                      // pure-grass fast path (sig 0, row 0)
+    if(img) ctx.drawImage(img, 0,0,16,16, Math.round(sx),Math.round(sy),16,16);
+    else rect(sx,sy,16,16,'#2f5a32');
     return;
   }
-  const fallback=['#38a64d','#23763a','#35a449','#7d7661','#766f5b','#c99a43','#c99a43','#696b63','#5f625c','#241820','#5f533f','#1b5b31','#3787a5','#c88d35','#c8ac86','#8f2f2a','#271622','#37a54b','#59615a','#090b0f'];
-  rect(sx,sy,16,16,fallback[id]||'#ff00ff');
-}
-function drawWorldTile(id,tx,ty){
-  const s=worldToScreen(tx*TILE,ty*TILE);
-  drawAtlasTile(id,s.x,s.y);
+  const dom=Math.max(nw,ne,sw,se);                         // dominant feature picks the row
+  const byte=((nw===dom)?8:0)|((ne===dom)?4:0)|((sw===dom)?2:0)|((se===dom)?1:0);
+  const row=WANG_ROW[dom];
+  if(img) ctx.drawImage(img, byte*16, row*16, 16,16, Math.round(sx),Math.round(sy),16,16);
+  else rect(sx,sy,16,16,TERRAIN_FALLBACK[row]||'#2f5a32');
 }
 function drawTerrain(){
   const sh=maybeShake(); ctx.save(); ctx.translate(Math.round(sh.x),Math.round(sh.y));
@@ -1213,7 +1232,7 @@ function drawTerrain(){
   const startX=Math.floor((camera.x-VIEW_W/2)/TILE)-1, endX=Math.floor((camera.x+VIEW_W/2)/TILE)+1;
   const startY=Math.floor((camera.y-VIEW_H/2)/TILE)-1, endY=Math.floor((camera.y+VIEW_H/2)/TILE)+1;
   for(let ty=startY;ty<=endY;ty++)for(let tx=startX;tx<=endX;tx++){
-    drawWorldTile(mapTile(tx,ty),tx,ty);
+    const s=worldToScreen(tx*TILE,ty*TILE); drawWang(tx,ty,s.x,s.y);
   }
   drawDecor();
   ctx.restore();
@@ -1240,7 +1259,7 @@ function drawDecor(){
 function drawChapel(){
   const base=worldToScreen(-92,-118);
   rect(base.x-8,base.y+78,176,9,'rgba(0,0,0,.22)');
-  for(let y=0;y<5;y++)for(let x=0;x<9;x++)drawAtlasTile(y<2?TILE_ID.chapelRoof:TILE_ID.chapelWall,base.x+x*16,base.y+y*16);
+  for(let y=0;y<5;y++)for(let x=0;x<9;x++)rect(base.x+x*16,base.y+y*16,16,16,y<2?'#8f2f2a':'#c8ac86');
   rect(base.x-8,base.y+22,160,4,'#5c1d22');
   rect(base.x+18,base.y+50,22,30,'#6e2b23');
   rect(base.x+22,base.y+56,14,16,'#9b3a2d');
@@ -1351,8 +1370,13 @@ const INTERACTABLES=[
   {id:'ledger-core-a',target:'ledger-core',quest:'q12',x:1944,y:-44,label:'CORE',kind:'tablet'},
   {id:'ledger-core-b',target:'ledger-core',quest:'q12',x:2000,y:38,label:'CORE',kind:'tablet'}
 ];
-function interactionKey(i){ return Story.state.activeQuestId+':'+i.id; }
+// margin-scroll (Keeper of Margins) is an OPTIONAL side-interaction, not a quest step, so its
+// key is fixed ('q06:margin-scroll') — deterministic regardless of the active quest at inscribe time,
+// which the foreman weakening gate in startBossEncounter() reads.
+function interactionKey(i){ return i.id==='margin-scroll' ? 'q06:margin-scroll' : (Story.state.activeQuestId+':'+i.id); }
 function interactableActive(i){
+  // Optional side-interaction: light up whenever q06 is reached and not yet inscribed.
+  if(i.id==='margin-scroll') return Story.questReached('q06') && !progress.interactions.has(interactionKey(i));
   const st=Story.currentStep();
   return !!(st && st.done && st.done.event==='interact' && st.done.target===i.target && Story.questReached(i.quest) && !progress.interactions.has(interactionKey(i)));
 }
@@ -1410,20 +1434,25 @@ function directionName(dx,dy){
   return DIR_NAMES[Math.round(angle/(Math.PI/4))%8];
 }
 function drawHeroKnightPlayer(p){
-  const a=ASSETS.heroKnightDir, img=a&&a.img;
+  const attacking=!!p.attack;
+  const a=attacking?ASSETS.heroKnightAtk:ASSETS.heroKnightDir, img=a&&a.img;
   if(!img)return false;
   const dir=directionName(p.dirX||1,p.dirY||0);
   const dirFrame=Math.max(0,PLAYER_DIR_ORDER.indexOf(dir));
-  const walkFrame=p.moving?Math.floor(state.time*8)%4:0;
-  const frame=walkFrame*PLAYER_DIR_ORDER.length+dirFrame;
-  const s=worldToScreen(p.x,p.y);
-  const bob=p.moving?Math.sin(state.time*14)*1:0;
-  ctx.drawImage(img,frame*a.w,0,a.w,a.h,Math.round(s.x-a.w/2),Math.round(s.y-a.h+10+bob),a.w,a.h);
-  if(p.hurt>0){
-    ctx.globalAlpha=.34;
-    rect(s.x-a.w/2,s.y-a.h+10+bob,a.w,a.h,'#ffffff');
-    ctx.globalAlpha=1;
+  let frame;
+  if(attacking){
+    const k=Math.min(0.999,Math.max(0,p.attack.t/0.2));        // 0..1 over the 200ms swing
+    frame=Math.floor(k*7)*PLAYER_DIR_ORDER.length+dirFrame;    // 7-frame sword slash
+  }else{
+    const walkFrame=p.moving?Math.floor(state.time*8)%4:0;
+    frame=walkFrame*PLAYER_DIR_ORDER.length+dirFrame;
   }
+  const s=worldToScreen(p.x,p.y);
+  const bob=(p.moving&&!attacking)?Math.sin(state.time*14)*1:0;
+  const SC=1.3, dw=a.w*SC, dh=a.h*SC;                          // walk + attack share a 54x44 cell
+  const dx=Math.round(s.x-dw/2), dy=Math.round(s.y-dh+8+bob);  // body centred, feet at shadow
+  ctx.drawImage(img,frame*a.w,0,a.w,a.h,dx,dy,dw,dh);
+  if(p.hurt>0){ ctx.globalAlpha=.34; rect(dx,dy,dw,dh,'#ffffff'); ctx.globalAlpha=1; }
   return true;
 }
 function drawEntityFallback(e,key,frame){
@@ -1433,7 +1462,21 @@ function drawEntityFallback(e,key,frame){
   else if(key==='sentinel'){ rect(s.x-16,s.y-34,32,28,'#7d6221'); rect(s.x-10,s.y-48,20,16,'#f1c75b'); rect(s.x+12,s.y-40,5,32,'#e24a4a'); }
   else { rect(s.x-7,s.y-22,14,18,TYPES[key].color); rect(s.x-5,s.y-28,10,8,'#d8dce2'); }
 }
+function drawEncounterMarker(p){
+  const s=worldToScreen(p.x,p.y), pulse=.65+.35*Math.sin(state.time*5);
+  drawShadow(p.x,p.y,26,8);
+  ctx.globalAlpha=.72;
+  ctx.strokeStyle='#f1c75b'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(s.x,s.y-19,10+pulse*2,0,Math.PI*2); ctx.stroke();
+  ctx.globalAlpha=1;
+  rect(s.x-7,s.y-29,14,20,'#2a2414');
+  rect(s.x-5,s.y-27,10,16,'#3d3420');
+  rect(s.x-1,s.y-31,2,24,'#f1c75b');
+  ctx.font='9px ui-monospace,monospace'; ctx.textAlign='center'; ctx.fillStyle='#f1c75b';
+  ctx.fillText('IN ENCOUNTER',s.x,s.y-42);
+}
 function drawPlayerSprite(p,remote=false){
+  if(remote&&p.mode&&p.mode!=='town'){ drawEncounterMarker(p); return; }
   const frame=p.attack?2:(p.hurt>0?3:(p.moving?1:0));
   drawShadow(p.x,p.y,remote?24:32,remote?8:10);
   const s=worldToScreen(p.x,p.y);
@@ -1483,7 +1526,14 @@ function drawParticles(){
   for(const p of particles){
     const s=worldToScreen(p.x,p.y);
     if(p.kind==='slash'){
-      const k=p.t/p.max; ctx.globalAlpha=k; rect(s.x+p.dx*16-10,s.y-20+p.dy*8,22,4,'#f1c75b'); rect(s.x+p.dx*20-5,s.y-17+p.dy*7,11,2,'#ffffff'); ctx.globalAlpha=1;
+      // crescent weapon trail swept across the facing arc (replaces the old gold bar)
+      const k=p.t/p.max, ang=Math.atan2(p.dy||0,p.dx||1);
+      const cx=s.x+p.dx*9, cy=s.y-14+p.dy*7, r=15+ (1-k)*4;
+      ctx.globalAlpha=k*0.9; ctx.strokeStyle='#f1e6c8'; ctx.lineWidth=3; ctx.lineCap='round';
+      ctx.beginPath(); ctx.arc(cx,cy,r, ang-0.95, ang+0.95); ctx.stroke();
+      ctx.globalAlpha=k*0.5; ctx.strokeStyle='#ffffff'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(cx,cy,r, ang-0.6, ang+0.6); ctx.stroke();
+      ctx.globalAlpha=1; ctx.lineCap='butt';
     } else if(p.kind==='cast'){
       ctx.globalAlpha=p.t/p.max; rect(s.x-7,s.y-17,14,14,'#9b74ff'); ctx.globalAlpha=1;
     } else {
@@ -1528,11 +1578,10 @@ function drawAssetProof(){
   icons.forEach((key,i)=>{ const a=ASSETS[key]; if(a&&a.img)ctx.drawImage(a.img,0,0,a.w,a.h,34+i*38,291,32,32); drawProofLabel(RELICS[i].name.split(' ')[0],50+i*38,335,'#f1c75b'); });
   const tiles=ASSETS.tiles&&ASSETS.tiles.img;
   if(tiles){
-    for(let i=0;i<42;i++){
-      const id=TILE_TEX[i%TILE_TEX.length]||0, dx=28+(i%14)*16, dy=46+Math.floor(i/14)*16;
-      ctx.drawImage(tiles,(id%ATLAS_COLS)*16,Math.floor(id/ATLAS_COLS)*16,16,16,dx,dy,16,16);
-    }
-    drawProofLabel('kenney tiles-rogue',140,105,'#9f967f');
+    // grass base + the 5 pure feature tiles (corner-sig 15) from the parish Wang atlas
+    const cells=[[0,0],[15,0],[15,1],[15,2],[15,3],[15,4]];
+    cells.forEach(([bx,by],i)=>ctx.drawImage(tiles,bx*16,by*16,16,16,28+i*22,58,16,16));
+    drawProofLabel('pixellab tiles-parish (wang)',140,105,'#9f967f');
   }
 }
 function draw(){
@@ -1597,8 +1646,8 @@ function updateWallet(){
   document.getElementById('diff').textContent=Chain.DIFFICULTY+' nibbles';
   document.getElementById('hr').textContent=Chain.hashrate.toLocaleString()+' H/s';
   document.getElementById('burned').textContent=Econ.solTally(ECON.BURN_ADDR).toFixed(4);
-  document.getElementById('prizepool').textContent=Econ.solTally(ECON.PRIZE_ADDR).toFixed(4);
-  document.getElementById('feepool').textContent=Econ.solTally(ECON.FEE_ADDR).toFixed(4);
+  document.getElementById('marketingpool').textContent=Econ.solTally(ECON.MARKETING_ADDR).toFixed(4);
+  document.getElementById('opspool').textContent=Econ.solTally(ECON.OPS_ADDR).toFixed(4);
   let html='';
   if(Chain.mining)html+='<div class="blk mining">#'+Chain.mining.index+' mining - nonce '+Chain.mining.nonce.toLocaleString()+'</div>';
   for(const b of Chain.chain.slice(-5).reverse())html+='<div class="blk">#'+b.index+' '+b.hash.slice(0,12)+' - '+(b.txs||[]).length+' tx</div>';

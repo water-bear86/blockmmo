@@ -6,8 +6,8 @@
 const ECON = {
   GOLD_PER_RUNE:1,
   GOLD_PER_SOL:1000,
-  SPLIT:{prize:0.50,burn:0.35,fee:0.15},
-  BURN_ADDR:'BURN', PRIZE_ADDR:'PRIZE_POOL', FEE_ADDR:'FEE', EXCHANGE_ADDR:'EXCHANGE'
+  SPLIT:{burn:0.50,marketing:0.35,ops:0.15},
+  BURN_ADDR:'BURN', MARKETING_ADDR:'MARKETING', OPS_ADDR:'OPS', EXCHANGE_ADDR:'EXCHANGE'
 };
 
 const ENEMY_REWARDS = {
@@ -92,10 +92,12 @@ const STORY = root.RUNECHAIN_STORY || {
     title:'Vault Anteroom',
     onStart:['The Shroud Vaults open northward. Crystallized ledger-stone hums with inherited debt.'],
     steps:[
-      {id:'lectern', text:'Read the ancestor-chain lectern in the Vault Anteroom.', done:{event:'interact', target:'ancestor-lectern', count:1}},
-      {id:'margins', text:'Find the Keeper of Margins and re-inscribe her erased entry.', done:{event:'interact', target:'margin-scroll', count:1}}
+      {id:'lectern', text:'Read the ancestor-chain lectern in the Vault Anteroom.', done:{event:'interact', target:'ancestor-lectern', count:1}}
     ],
-    onComplete:['The Keeper testifies. Her words will weaken the Foreman below.'],
+    /* The Keeper of Margins (margin-scroll) is a canonical OPTIONAL side-interaction, not a
+       required q06 step: re-inscribing her entry weakens the Debt Foreman (two difficulty
+       states). See index.html interactableActive/startBossEncounter (predicate 'q06:margin-scroll'). */
+    onComplete:['The anteroom records your descent. The shaft below splits Canon from Schism.'],
     rewards:{rune:28},
     next:'q07'
   },{
@@ -185,6 +187,21 @@ const RELICS = [
 /* Boss Sigils — unique on-chain final-boss drops. RATIFIED RULINGS (docs/design/DESIGN-BIBLE.md):
    sigils grant RUNE-ACQUISITION bonuses earned by boss kills (grind-gated), never purchasable power.
    RUNE buys power ONLY at a Hearthlight; Gold is cosmetics only; endgame loops grant no farmable power. */
+/* Hearthlight leveling — the ONLY RUNE power-sink besides relic forging (DESIGN-BIBLE Ruling 1).
+   A stat's level is derived from accepted spend blocks on the ledger; cost rises with each level so
+   power stays grind-gated. Authoritative cost math lives here so client and server agree exactly. */
+const LEVELING = {
+  baseCost: 12,
+  growth: 8,
+  maxLevel: 20,
+  stats: {
+    vigor:     { name:'Vigor',     grants:'+12 max health',  hp:12 },
+    endurance: { name:'Endurance', grants:'+10 max stamina', sta:10 },
+    strength:  { name:'Strength',  grants:'+4 attack',       dmg:4 },
+  },
+  // Cost to buy the (level -> level+1) upgrade, where `level` is the current count of that stat.
+  costFor(level) { return this.baseCost + this.growth * level; },
+};
 const SIGILS = {
   'waxen-testament': { name:'The Waxen Testament', runeMult:0.12, note:'Legitimately Recorded' },
   'contested-will':  { name:'The Contested Will', runeMult:0.10, atkSpeed:0.12, iframeOnHit:true, note:'Severed from inheritance' },
@@ -201,9 +218,10 @@ const SKINS = [
 ];
 
 const ASSETS={
-  tiles:{src:'assets/pixel/tiles-rogue.png',w:16,h:16,img:null},
+  tiles:{src:'assets/pixel/tiles-parish.png',w:16,h:16,img:null},
   playerDir:{src:'assets/pixel/player-directions.png',w:56,h:56,img:null},
-  heroKnightDir:{src:'assets/pixel/hero-knight-directions.png',w:56,h:56,img:null},
+  heroKnightDir:{src:'assets/pixel/hero-knight-directions.png',w:54,h:44,img:null},
+  heroKnightAtk:{src:'assets/pixel/hero-knight-attack.png',w:54,h:44,img:null},
   player:{src:'assets/pixel/player.png',w:24,h:24,img:null},
   'free-knight-idle':{src:'assets/pixel/free-knight-idle.png',w:120,h:80,img:null},
   'free-knight-run':{src:'assets/pixel/free-knight-run.png',w:120,h:80,img:null},
@@ -366,9 +384,17 @@ const BATTLE_LEDGER_VAULTS={id:'a2-ledger-vaults',name:"Ledger Vaults / Well's M
   creatures:{'hollow-ancestor':{hp:18,speed:80,damage:3,reach:14,radius:8,color:'#8cb8e0'},'canon-auditor':{hp:52,speed:28,damage:7,reach:24,radius:13,color:'#d4a83e'},'schism-shadow':{hp:14,speed:115,damage:4,reach:14,radius:7,color:'#4ecb7a'},default:{hp:20,speed:50,damage:3,reach:14,radius:9,color:'#7c9cbc'}},
   zones:[{id:'canon-sanctuary',x:80,y:150,w:500,h:320,regen:12,clearFor:16},{id:'schism-chasm',x:1020,y:150,w:500,h:320,regen:5,clearFor:14},{id:'well-mouth',x:600,y:500,w:400,h:280,regen:8,clearFor:12}],
   waves:[{id:'canon-first',at:0.5,zoneId:'canon-sanctuary',spawns:[{type:'canon-auditor',x:250,y:250,count:2},{type:'hollow-ancestor',x:420,y:360,count:3}]},{id:'schism-rush',at:5.5,zoneId:'schism-chasm',spawns:[{type:'schism-shadow',x:1150,y:260,count:4},{type:'hollow-ancestor',x:1280,y:380,count:3}]},{id:'well-surge',at:12.0,zoneId:'well-mouth',spawns:[{type:'canon-auditor',x:720,y:560,count:2},{type:'schism-shadow',x:880,y:620,count:3},{type:'hollow-ancestor',x:650,y:680,count:4}]}]};
-const TURN_FOREMAN={id:'duel-foreman',name:'The Debt Foreman',opponent:{name:'The Debt Foreman',hp:140,attack:16,defense:3,color:'#4ecbaa',sprite:'foreman'}};
-const TURN_BIFURCATED={id:'duel-bifurcated',name:'Bifurcated Guard',opponent:{name:'Bifurcated Guard',hp:120,attack:14,defense:4,color:'#d4a83e',sprite:'bifurcated'}};
-const TURN_LEDGERBOUND={id:'duel-ledgerbound',name:'The Ledger-Bound',opponent:{name:'The Ledger-Bound',hp:220,attack:20,defense:5,color:'#a8c8ff',sprite:'ledgerbound'}};
+/* Area 2 fork bosses use the turn-based engine's additive dual-chain model:
+   opponent{} stays for sprite/attack/defense back-compat; dualChain.a/b are the real bars
+   (BOTH must reach 0). crossHeal:true => striking one half mends the other unless Strike Both. */
+const TURN_FOREMAN={id:'duel-foreman',name:'The Debt Foreman',opponent:{name:'The Debt Foreman',hp:140,attack:16,defense:3,color:'#4ecbaa',sprite:'foreman'},
+  dualChain:{a:{hp:70,label:'CANON',color:'#d4a83e'},b:{hp:70,label:'SCHISM',color:'#4ecb7a'},crossHeal:false}};
+const TURN_BIFURCATED={id:'duel-bifurcated',name:'Bifurcated Guard',opponent:{name:'Bifurcated Guard',hp:120,attack:14,defense:4,color:'#d4a83e',sprite:'bifurcated'},
+  dualChain:{a:{hp:60,label:'LEFT',color:'#d4a83e'},b:{hp:60,label:'RIGHT',color:'#4ecb7a'},crossHeal:true}};
+/* Ledger-Bound (FINAL): single-HP Phase 1, then opponent.phase2 splits it into a dual-pool
+   re-merging arena at 40% HP (mergePerTurn regen unless Strike Both). Mints 'The Contested Will'. */
+const TURN_LEDGERBOUND={id:'duel-ledgerbound',name:'The Ledger-Bound',opponent:{name:'The Ledger-Bound',hp:220,attack:20,defense:5,color:'#a8c8ff',sprite:'ledgerbound',
+  phase2:{threshold:0.4,aHp:60,bHp:60,aLabel:'CANON',bLabel:'SCHISM',aColor:'#d4a83e',bColor:'#4ecb7a',mergePerTurn:5}}};
 const AREA2_ENCOUNTERS={
   foreman:{id:'debt-foreman',name:'The Debt Foreman',beat:0.8,segments:[
     {mode:'platformer',name:'Descent into the Debt Mines',payload:PLAT_DEBT_MINES,beatText:'The shaft swallows names.',complete:{event:'boss'}},
@@ -415,7 +441,7 @@ const AREA3_ENCOUNTERS={
 };
 
   return {
-    ECON, ENEMY_REWARDS, STORY, RELICS, SIGILS, SKINS, ASSETS,
+    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, SKINS, ASSETS,
     PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
     TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
     PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,

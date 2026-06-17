@@ -68,8 +68,8 @@ Two currencies, and the line between them is the whole design:
 Two one-way on-ramps fill Gold (there is **no cash-out**):
 
 1. **Grind → convert:** turn confirmed RUNE into Gold at a flat rate.
-2. **Buy with wrapped SOL:** each purchase splits **50% to the skill-prize pool · 35% burned ·
-   15% platform fee**, all routed on-chain. This 15% is the *only* fee in the whole game —
+2. **Buy with wrapped SOL:** each purchase splits **50% burned · 35% marketing ·
+   15% ops fee**, all routed on-chain. This 15% is the *only* fee in the whole game —
    grinding, converting, spending, and account trades are all free.
 
 Because real money can only ever buy *looks*, the free grind always reaches every power

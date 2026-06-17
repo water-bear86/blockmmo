@@ -22,7 +22,7 @@ const {
   validateBlockCandidate,
   validateChain,
 } = require('./game/chain.js');
-const { ENEMY_REWARDS, STORY } = require('./game/content.js');
+const { ENEMY_REWARDS, STORY, RELICS, LEVELING } = require('./game/content.js');
 
 const DEFAULT_PORT = process.env.PORT || 8080;
 const DEFAULT_SEASON_ID = 'preseason-1';
@@ -164,6 +164,11 @@ function createRealmServer(options = {}) {
         if (!account.ok) return account;
         return issueRewardMiningWork(client, message.source);
       }
+      case 'spend:request': {
+        const account = requireAccount(client);
+        if (!account.ok) return account;
+        return issueSpendMiningWork(client, message.source);
+      }
       case 'mine:submit': {
         const account = requireAccount(client);
         if (!account.ok) return account;
@@ -278,22 +283,12 @@ function createRealmServer(options = {}) {
   }
 
   function issueRewardMiningWork(client, source) {
-    cleanupMiningCandidates();
-    const pendingCandidate = findPendingCandidateForCharacter(client.character.id);
-    if (pendingCandidate) {
-      const result = blockError('mining_candidate_pending', 'Finish the current server-issued mining candidate before requesting another.');
-      send(client, { t: 'mine:error', error: result.error });
-      return result;
-    }
-
     const reward = resolveRewardSource(source);
     if (!reward.ok) {
       send(client, { t: 'mine:error', error: reward.error });
       return reward;
     }
-
-    const candidateId = 'srv-' + crypto.randomBytes(8).toString('hex');
-    const tx = {
+    return issueMiningCandidate(client, (candidateId) => ({
       to: client.character.address,
       amt: reward.amt,
       note: reward.note,
@@ -306,7 +301,53 @@ function createRealmServer(options = {}) {
         characterId: client.character.id,
         seasonId,
       },
-    };
+    }));
+  }
+
+  function issueSpendMiningWork(client, source) {
+    const address = client.character.address;
+    const spend = resolveSpendSource(source, address);
+    if (!spend.ok) {
+      send(client, { t: 'mine:error', error: spend.error });
+      return spend;
+    }
+    // Authoritative balance check. Only one candidate can be pending per character
+    // (enforced below), so a confirmed-ledger balance check here has no double-spend window.
+    if (runeBalanceOf(address) < spend.amt) {
+      const result = blockError('insufficient_rune', 'Not enough RUNE on the Chainwell ledger for this purchase.');
+      send(client, { t: 'mine:error', error: result.error });
+      return result;
+    }
+    return issueMiningCandidate(client, (candidateId) => ({
+      from: address,
+      to: 'POWER_SINK',
+      amt: spend.amt,
+      note: spend.note,
+      cur: 'RUNE',
+      id: candidateId,
+      auth: {
+        type: 'server-spend',
+        source: spend.sourceKey,
+        effect: spend.effect,
+        accountId: client.accountId,
+        characterId: client.character.id,
+        seasonId,
+      },
+    }));
+  }
+
+  // Build a server-issued mining candidate from a tx and hand the PoW work to the client.
+  function issueMiningCandidate(client, buildTx) {
+    cleanupMiningCandidates();
+    const pendingCandidate = findPendingCandidateForCharacter(client.character.id);
+    if (pendingCandidate) {
+      const result = blockError('mining_candidate_pending', 'Finish the current server-issued mining candidate before requesting another.');
+      send(client, { t: 'mine:error', error: result.error });
+      return result;
+    }
+
+    const candidateId = 'srv-' + crypto.randomBytes(8).toString('hex');
+    const tx = buildTx(candidateId);
     const tip = masterChain[masterChain.length - 1];
     const block = {
       index: tip.index + 1,
@@ -326,6 +367,47 @@ function createRealmServer(options = {}) {
     });
     send(client, { t: 'mine:work', work });
     return { ok: true, work };
+  }
+
+  // Authoritative RUNE balance for an address, summed from accepted ledger blocks only.
+  function runeBalanceOf(address) {
+    let bal = 0;
+    for (const block of masterChain) {
+      for (const tx of block.txs || []) {
+        if ((tx.cur || 'RUNE') !== 'RUNE') continue;
+        if (tx.to === address) bal += tx.amt || 0;
+        if (tx.from === address) bal -= tx.amt || 0;
+      }
+    }
+    return bal;
+  }
+
+  // A stat's level is the count of accepted level-up spends for that address, read from the ledger.
+  function statLevelOf(address, stat) {
+    let level = 0;
+    for (const block of masterChain) {
+      for (const tx of block.txs || []) {
+        const auth = tx.auth;
+        if (tx.from === address && auth && auth.type === 'server-spend' &&
+            auth.effect && auth.effect.kind === 'level' && auth.effect.stat === stat) {
+          level += 1;
+        }
+      }
+    }
+    return level;
+  }
+
+  function ownsRelic(address, relicId) {
+    for (const block of masterChain) {
+      for (const tx of block.txs || []) {
+        const auth = tx.auth;
+        if (tx.from === address && auth && auth.type === 'server-spend' &&
+            auth.effect && auth.effect.kind === 'relic' && auth.effect.relicId === relicId) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   function acceptMinedWork(client, candidateId, block) {
@@ -408,6 +490,36 @@ function createRealmServer(options = {}) {
       };
     }
     return blockError('invalid_reward_source', 'Unsupported reward source type.');
+  }
+
+  function resolveSpendSource(source, address) {
+    if (!source || typeof source !== 'object') return blockError('invalid_spend_source', 'Spend source is required.');
+    if (source.type === 'level') {
+      const def = LEVELING.stats[source.stat];
+      if (!def) return blockError('invalid_spend_source', 'Unknown stat to level.');
+      const level = statLevelOf(address, source.stat);
+      if (level >= LEVELING.maxLevel) return blockError('stat_maxed', def.name + ' is already at the maximum level.');
+      return {
+        ok: true,
+        amt: LEVELING.costFor(level),
+        note: 'Hearthlight: ' + def.name + ' ' + (level + 1),
+        sourceKey: 'level:' + source.stat,
+        effect: { kind: 'level', stat: source.stat, level: level + 1 },
+      };
+    }
+    if (source.type === 'relic') {
+      const relic = RELICS.find(r => r.id === source.relicId);
+      if (!relic) return blockError('invalid_spend_source', 'Unknown relic to forge.');
+      if (ownsRelic(address, source.relicId)) return blockError('relic_owned', 'That relic is already forged.');
+      return {
+        ok: true,
+        amt: relic.price,
+        note: 'Hearthlight: forge ' + relic.name,
+        sourceKey: 'relic:' + relic.id,
+        effect: { kind: 'relic', relicId: relic.id },
+      };
+    }
+    return blockError('invalid_spend_source', 'Unsupported spend source type.');
   }
 
   function sanitizeDisplayName(value) {
