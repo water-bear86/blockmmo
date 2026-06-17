@@ -81,6 +81,23 @@ The engines update `api.player.x/y/vx/vy/dirX/dirY/moving` as a convenience so t
 host can keep one player record. The host remains authoritative for stats, stamina,
 damage mitigation, death, drops, RUNE, Gold, relics, and Chainwell writes.
 
+## Shared-world presence while in solo segments (Q-F2b)
+
+When a player leaves town for a solo segment (`platformer`, `battlefield`, `turnbased`,
+or a sequenced boss encounter), the shared-world relay keeps their last town transform
+visible instead of making the avatar vanish or freezing a normal-looking character.
+
+The host sends normal state messages with a presence mode:
+
+```js
+{ t:"state", id, name, skin, x, y, z, yaw, moving, mode:"town" }
+{ t:"state", id, name, skin, x, y, z, yaw, moving:false, mode:"encounter", encounter:"platformer" }
+```
+
+Remote town renderers treat any non-`town` mode as an **In Encounter** marker at that
+last shared-world position. This communicates that the player is busy in a solo/instanced
+segment without implying real-time town movement or leaving stale ghost duplicates.
+
 ## Input shape
 
 The playground sends this action shape. The host can map keys, gamepad, or UI to it:

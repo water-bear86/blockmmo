@@ -50,7 +50,9 @@
   #peers{right:12px;bottom:12px;width:225px;padding:10px;background:rgba(13,15,18,.78);border:2px solid var(--line);
     box-shadow:0 0 0 2px #050607;font-size:12px}
   .peerline{display:flex;align-items:center;gap:6px;margin:3px 0;color:#d9d1be}
-  .dot{width:8px;height:8px;background:var(--sta);box-shadow:0 0 7px var(--sta)}
+  .dot{width:7px;height:7px;background:var(--rune);box-shadow:0 0 8px var(--rune);display:inline-block}
+  .dot.encounter{background:var(--gold);box-shadow:0 0 8px rgba(241,199,91,.7)}
+  .peerstate{margin-left:auto;color:#9f967f;font-size:10px;text-transform:uppercase;letter-spacing:.08em}
   .dot.local{background:#7a7f86;box-shadow:none}
   #log{top:12px;right:12px;width:min(360px,calc(100vw - 24px));font-size:11px;color:#d8d0bd;text-align:right}
   #log div{display:inline-block;max-width:100%;margin:0 0 5px;padding:5px 7px;background:rgba(7,8,10,.64);
@@ -726,7 +728,7 @@ function enterEngineMode(name){
   if(name==='battlefield')mode=battlefieldMode=RCEngine.createBattlefieldMode(BATTLE_LEVEL);
   else if(name==='turnbased')mode=turnbasedMode=RCEngine.createTurnBasedMode(TURN_ENCOUNTER);
   else mode=platformerMode=RCEngine.createPlatformerMode(PLAT_LEVEL);
-  modeManager.setMode(mode, ctx, engineApi); state.mode=name;
+  modeManager.setMode(mode, ctx, engineApi); state.mode=name; Net.updatePeers();
   log(name==='battlefield'?'Mempool Yard — survive the waves. (T to leave)':name==='turnbased'?'A duel begins — Up/Down choose, J/Space confirm. (T to leave)':'Parish Road Receipts — reach the gate. (T to leave)');
 }
 function exitEngineMode(){
@@ -734,7 +736,7 @@ function exitEngineMode(){
   if(state.mode==='town')return;
   if(modeManager)modeManager.setMode(null, ctx, engineApi);
   player.hp=Math.max(1,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
-  state.mode='town'; log('Returned to Hearthlight.');
+  state.mode='town'; Net.updatePeers(); log('Returned to Hearthlight.');
 }
 function updateEngineMode(dt){
   modeManager.update(dt, engineInput());
@@ -753,7 +755,7 @@ function startTurnDuel(peerName){
   const ep=engineApi.player; player.hp=Math.round(ep.hp); player.sta=ep.sta;
   const enc={id:'pvp-duel',name:'Duel',peerId:peerName||'stub-rival',opponent:{name:(peerName||'Rival')+' Recorded',hp:90,attack:11,defense:1,color:'#6f7db0',sprite:'phantom'}};
   const mode=turnbasedMode=RCEngine.createTurnBasedMode(enc);
-  modeManager.setMode(mode, ctx, engineApi); state.mode='turnbased';
+  modeManager.setMode(mode, ctx, engineApi); state.mode='turnbased'; Net.updatePeers();
   log('Settling accounts — a turn-based duel begins. (T to leave)');
 }
 function startSegmentMode(seg){
@@ -769,13 +771,13 @@ function enterBossSequence(){
   const ep=engineApi.player; ep.maxHp=player.maxHp; ep.maxSta=player.maxSta; ep.hp=player.hp; ep.sta=player.sta; ep.name=player.name;
   bossSeq=RCEngine.createSegmentSequencer(BOSS_SCRIPT);
   bossSeq.enter(engineApi, { startMode:startSegmentMode, exitMode(){ if(modeManager)modeManager.setMode(null, ctx, engineApi); }, log:(m)=>log(m) });
-  state.mode='sequencer';
+  state.mode='sequencer'; Net.updatePeers();
   log('Boss encounter: '+(BOSS_SCRIPT.name||'')+'. (T to abandon)');
 }
 function endBossSequence(){
   if(modeManager)modeManager.setMode(null, ctx, engineApi);
   player.hp=Math.max(1,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
-  bossSeq=null; bossEncounterEnemy=null; state.mode='town';
+  bossSeq=null; bossEncounterEnemy=null; state.mode='town'; Net.updatePeers();
 }
 const BOSS_ENCOUNTER_KEYS=['sexton','mempool','tallow','foreman','bifurcated','ledgerbound','scrivener','cascade','auditor'];
 function nearestBossEncounter(){
@@ -807,7 +809,7 @@ function startBossEncounter(enemy){
   }
   bossSeq=RCEngine.createSegmentSequencer(useScript);
   bossSeq.enter(engineApi, { startMode:startSegmentMode, exitMode(){ if(modeManager)modeManager.setMode(null, ctx, engineApi); }, log:(m)=>log(m) });
-  state.mode='sequencer';
+  state.mode='sequencer'; Net.updatePeers();
   log('Encounter: '+script.name+'. (T to retreat)');
 }
 function updateBossSequence(dt){
@@ -1020,8 +1022,10 @@ const Net=(function(){
         }
         if(m.t==='state'&&m.id!==id){
           let r=remotes[m.id];
-          if(!r){ r={id:m.id,name:m.name||'Recorded',x:m.x||0,y:m.z||0,tx:m.x||0,ty:m.z||0,skin:m.skin||'tarnished',moving:false}; remotes[m.id]=r; updatePeers(); }
-          r.tx=m.x||0; r.ty=m.z||0; r.skin=m.skin||r.skin; r.moving=!!m.moving; r.dir=m.yaw||0;
+          if(!r){ r={id:m.id,name:m.name||'Recorded',x:m.x||0,y:m.z||0,tx:m.x||0,ty:m.z||0,skin:m.skin||'tarnished',moving:false,mode:m.mode||'town',encounter:m.encounter||null}; remotes[m.id]=r; updatePeers(); }
+          const oldMode=r.mode, oldEncounter=r.encounter;
+          r.tx=m.x||0; r.ty=m.z||0; r.skin=m.skin||r.skin; r.moving=!!m.moving; r.dir=m.yaw||0; r.mode=m.mode||'town'; r.encounter=m.encounter||null;
+          if(oldMode!==r.mode||oldEncounter!==r.encounter)updatePeers();
         }
         if(m.t==='leave'){ delete remotes[m.id]; updatePeers(); }
         if(m.t==='block'&&Chain.acceptRemote(m.block))log('Received a mined block from a peer.');
@@ -1068,7 +1072,7 @@ const Net=(function(){
       sendTimer+=dt;
       if(sendTimer>.08){
         sendTimer=0;
-        ws.send(JSON.stringify({t:'state',id,name:player.name,skin:player.skinId,x:player.x,y:0,z:player.y,yaw:Math.atan2(player.dirY,player.dirX),moving:player.moving}));
+        ws.send(JSON.stringify({t:'state',id,name:player.name,skin:player.skinId,x:player.x,y:0,z:player.y,yaw:Math.atan2(player.dirY,player.dirX),moving:state.mode==='town'&&player.moving,mode:state.mode==='town'?'town':'encounter',encounter:state.mode==='town'?null:state.mode}));
       }
     }
   }
@@ -1107,10 +1111,11 @@ const Net=(function(){
   }
   function updatePeers(){
     const el=document.getElementById('peerlist'); el.innerHTML='';
-    const me=document.createElement('div'); me.className='peerline'; me.innerHTML='<span class="dot"></span>'+esc(player.name)+' <span style="color:#7d776b">(you)</span>'; el.appendChild(me);
+    const meMode=state.mode==='town'?'town':state.mode;
+    const me=document.createElement('div'); me.className='peerline'; me.innerHTML='<span class="dot '+(state.mode==='town'?'':'encounter')+'"></span>'+esc(player.name)+' <span style="color:#7d776b">(you)</span><span class="peerstate">'+esc(meMode==='town'?'town':'in '+meMode)+'</span>'; el.appendChild(me);
     const rs=Object.values(remotes);
     if(!connected&&!rs.length){ const d=document.createElement('div'); d.className='peerline'; d.innerHTML='<span class="dot local"></span>Solo mode'; el.appendChild(d); return; }
-    for(const r of rs){ const d=document.createElement('div'); d.className='peerline'; d.innerHTML='<span class="dot"></span>'+esc(r.name); el.appendChild(d); }
+    for(const r of rs){ const d=document.createElement('div'); d.className='peerline'; const inEncounter=r.mode&&r.mode!=='town'; d.innerHTML='<span class="dot '+(inEncounter?'encounter':'')+'"></span>'+esc(r.name)+'<span class="peerstate">'+esc(inEncounter?'in '+(r.encounter||'encounter'):'town')+'</span>'; el.appendChild(d); }
   }
   return {connect,tick,mineAuthorized,requestRuneReward,updatePeers,get connected(){return connected;},get authenticated(){return accountReady;}};
 })();
@@ -1444,7 +1449,21 @@ function drawEntityFallback(e,key,frame){
   else if(key==='sentinel'){ rect(s.x-16,s.y-34,32,28,'#7d6221'); rect(s.x-10,s.y-48,20,16,'#f1c75b'); rect(s.x+12,s.y-40,5,32,'#e24a4a'); }
   else { rect(s.x-7,s.y-22,14,18,TYPES[key].color); rect(s.x-5,s.y-28,10,8,'#d8dce2'); }
 }
+function drawEncounterMarker(p){
+  const s=worldToScreen(p.x,p.y), pulse=.65+.35*Math.sin(state.time*5);
+  drawShadow(p.x,p.y,26,8);
+  ctx.globalAlpha=.72;
+  ctx.strokeStyle='#f1c75b'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(s.x,s.y-19,10+pulse*2,0,Math.PI*2); ctx.stroke();
+  ctx.globalAlpha=1;
+  rect(s.x-7,s.y-29,14,20,'#2a2414');
+  rect(s.x-5,s.y-27,10,16,'#3d3420');
+  rect(s.x-1,s.y-31,2,24,'#f1c75b');
+  ctx.font='9px ui-monospace,monospace'; ctx.textAlign='center'; ctx.fillStyle='#f1c75b';
+  ctx.fillText('IN ENCOUNTER',s.x,s.y-42);
+}
 function drawPlayerSprite(p,remote=false){
+  if(remote&&p.mode&&p.mode!=='town'){ drawEncounterMarker(p); return; }
   const frame=p.attack?2:(p.hurt>0?3:(p.moving?1:0));
   drawShadow(p.x,p.y,remote?24:32,remote?8:10);
   const s=worldToScreen(p.x,p.y);
