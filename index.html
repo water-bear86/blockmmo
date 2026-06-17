@@ -1483,10 +1483,6 @@ function drawPlayerSprite(p,remote=false){
     rect(s.x-5,s.y-6,4,7,'#151617');
     rect(s.x+1,s.y-6,4,7,'#151617');
   }
-  if(!remote&&!drewHero){
-    const sx=s.x+p.dirX*15, sy=s.y-23+p.dirY*9;
-    if(p.attack)rect(sx,sy,18,4,'#f1e6c8'); else rect(s.x+13,s.y-30,4,21,'#dce8ef');
-  }
 }
 function drawEnemy(e){
   if(e.dead&&e.deathT<=0)return;
