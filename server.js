@@ -449,6 +449,9 @@ function createRealmServer(options = {}) {
 
   function listen(callback) {
     sweepInterval = setInterval(sweepStaleClients, 5000);
+    server.on('close', () => {
+      if (sweepInterval) { clearInterval(sweepInterval); sweepInterval = null; }
+    });
     server.listen(port, () => {
       log('');
       log('  RUNECHAIN realm server is live');
