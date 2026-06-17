@@ -218,9 +218,10 @@ const SKINS = [
 ];
 
 const ASSETS={
-  tiles:{src:'assets/pixel/tiles-rogue.png',w:16,h:16,img:null},
+  tiles:{src:'assets/pixel/tiles-parish.png',w:16,h:16,img:null},
   playerDir:{src:'assets/pixel/player-directions.png',w:56,h:56,img:null},
-  heroKnightDir:{src:'assets/pixel/hero-knight-directions.png',w:56,h:56,img:null},
+  heroKnightDir:{src:'assets/pixel/hero-knight-directions.png',w:54,h:44,img:null},
+  heroKnightAtk:{src:'assets/pixel/hero-knight-attack.png',w:54,h:44,img:null},
   player:{src:'assets/pixel/player.png',w:24,h:24,img:null},
   'free-knight-idle':{src:'assets/pixel/free-knight-idle.png',w:120,h:80,img:null},
   'free-knight-run':{src:'assets/pixel/free-knight-run.png',w:120,h:80,img:null},
