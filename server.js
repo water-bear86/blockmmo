@@ -26,7 +26,7 @@ const {
 const { ENEMY_REWARDS, STORY, RELICS, LEVELING } = require('./game/content.js');
 
 const DEFAULT_PORT = process.env.PORT || 8080;
-const DEFAULT_PREVIEW_PLAY_URL = 'http://40.176.60.86:8080';
+const DEFAULT_PREVIEW_PLAY_URL = 'https://play.runechaingame.com';
 const DEFAULT_SEASON_ID = 'preseason-1';
 const ACCOUNT_CREDENTIAL_TYPE = 'browser-p256-v1';
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'; // WebSocket magic string

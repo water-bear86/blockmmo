@@ -6,7 +6,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const MAILING_LIST_FILE = process.env.RUNECHAIN_WAITLIST_CSV || path.join(os.tmpdir(), 'runechain-waitlist.csv');
 const WAITLIST_EXPORT_TOKEN = process.env.WAITLIST_EXPORT_TOKEN || '';
-const PREVIEW_PLAY_URL = process.env.RUNECHAIN_PREVIEW_URL || 'http://40.176.60.86:8080';
+const PREVIEW_PLAY_URL = process.env.RUNECHAIN_PREVIEW_URL || 'https://play.runechaingame.com';
 
 module.exports = function runechainVercelAdapter(req, res) {
   const requestUrl = new URL(originalPathFromRewrite(req.url || '/'), `https://${req.headers.host || 'runechaingame.com'}`);
