@@ -209,11 +209,28 @@ Shapes:
 The current `server.js` dumb relay can pass these through unchanged once the host
 adapter exposes `net.send` and routes incoming messages to `net.on(type, handler)`.
 
-## Economy boundary
+## Server authority boundary
 
 The engines never mint, debit, credit, drop, price, or hardcode RUNE/Gold outcomes.
 They surface events (`onCreatureDefeated`, `onZoneCleared`, `onBossTrigger`,
-`onDuelResult`) and the host decides whether anything should happen economically.
+`onDuelResult`) and the host/server decides whether anything should happen economically.
+Connected realms enforce the S2/U7 authority split in `server.js`:
+
+- **Authoritative:** economy state, RUNE credit/debit, leveling, death, character/season
+  state, and PvP outcomes are server-owned. Raw client `block` messages are rejected;
+  ledger changes append only from server-issued mining candidates re-validated with
+  `validateBlockCandidate`.
+- **Validated:** solo segment outcomes can run client-side for responsiveness, but any
+  ledger-touching reward must be proposed through `segment:complete`. The server validates
+  the outcome shape/proof, builds the exact Chainwell transaction, then accepts only the
+  matching mined `mine:submit` block.
+- **Non-authoritative:** shared-world movement remains a casual relay. The server
+  canonicalizes identity (`peerId`, `characterId`, display name) but does not treat movement
+  as economy or combat authority.
+
+Authority policy is exported as `AUTHORITY_TIERS` for deterministic verification and server
+tests. Client-authored PvP result/hit/forfeit messages are rejected until a server-arbitrated
+turn protocol is implemented.
 
 ## Turn-based RPG battle mode (`turnbased.js`, PRD F2.4)
 

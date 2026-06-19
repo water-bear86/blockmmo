@@ -237,7 +237,7 @@
 const Content = window.RUNECHAIN_CONTENT;
 if (!Content || !window.RUNECHAIN_SHA256 || !window.RUNECHAIN_CHAIN || !window.RUNECHAIN_ACCOUNT) throw new Error('RUNECHAIN core scripts failed to load');
 const {
-  ECON, STORY, RELICS, SIGILS, SKINS, ASSETS,
+  ECON, STORY, RELICS, SIGILS, SKINS, ASSETS, NPCS,
   PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
   TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
   PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,
@@ -343,6 +343,91 @@ const Story=(function(){
     return !!(st && st.done && st.done.event==='kill' && st.done.monster===key);
   }
   return {state,event,updateHud,currentQuest,currentStep,questReached,stepMatchesMonster};
+})();
+
+/* --------------------------- Dialogue subsystem -------------------------- */
+/* Branching, multi-line, repeatable NPC conversations. Data-driven from each
+   NPC's dialogue tree (see game/content.js NPCS format). Mirrors the engine-mode
+   lifecycle: open()/advance()/choose()/render()/close(). World input is paused
+   while a dialogue is open (update()/doInteract() bail on Dialogue.isOpen()). */
+const Dialogue=(function(){
+  const talked=new Set();
+  let active=null; // {npc, nodes, nodeId, line, sel}
+  function isOpen(){ return !!active; }
+  function open(npc){
+    if(active||!npc||!npc.dialogue)return;
+    const d=npc.dialogue, seen=talked.has(npc.id);
+    const entry=(seen&&d.repeat)?d.repeat:d.start;
+    talked.add(npc.id);
+    active={npc, nodes:d.nodes, nodeId:entry, line:0, sel:0};
+  }
+  function node(){ return active&&active.nodes[active.nodeId]; }
+  function atLastLine(){ const n=node(); return !n||active.line>=(n.text?n.text.length:0)-1; }
+  function goTo(id){ active.nodeId=id; active.line=0; active.sel=0; }
+  function close(){ active=null; }
+  function advance(){
+    const n=node(); if(!n)return close();
+    const lines=n.text||[];
+    if(active.line<lines.length-1){ active.line++; return; }
+    if(n.choices&&n.choices.length)return; // wait for a choice
+    if(n.goto)return goTo(n.goto);
+    close();
+  }
+  function moveSel(delta){
+    const n=node(); if(!n||!atLastLine()||!(n.choices&&n.choices.length))return;
+    const len=n.choices.length;
+    active.sel=(active.sel+delta+len)%len;
+  }
+  function choose(){
+    const n=node(); if(!n||!atLastLine()||!(n.choices&&n.choices.length))return false;
+    goTo(n.choices[active.sel].goto);
+    return true;
+  }
+  // E / Space when a dialogue is open: pick a choice if one is showing, else advance text.
+  function input(){
+    const n=node(); if(!n)return close();
+    if(atLastLine()&&n.choices&&n.choices.length){ choose(); return; }
+    advance();
+  }
+  function wrap(text,max){
+    const words=String(text).split(' '), out=[]; let line='';
+    for(const w of words){
+      const t=line?line+' '+w:w;
+      if(t.length>max){ if(line)out.push(line); line=w; } else line=t;
+    }
+    if(line)out.push(line);
+    return out;
+  }
+  function render(){
+    const n=node(); if(!n)return;
+    const boxX=40, boxW=VIEW_W-80, boxH=120, boxY=VIEW_H-boxH-18;
+    ctx.fillStyle='rgba(10,9,14,.9)'; ctx.fillRect(boxX,boxY,boxW,boxH);
+    ctx.strokeStyle='rgba(241,199,91,.85)'; ctx.lineWidth=2; ctx.strokeRect(boxX+1,boxY+1,boxW-2,boxH-2);
+    ctx.strokeStyle='rgba(241,199,91,.25)'; ctx.lineWidth=1; ctx.strokeRect(boxX+5,boxY+5,boxW-10,boxH-10);
+    const speaker=n.speaker||active.npc.name, col=active.npc.color||'#f1c75b';
+    rect(boxX+12,boxY+12,16,16,col); ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=1; ctx.strokeRect(boxX+12,boxY+12,16,16);
+    ctx.textAlign='left'; ctx.font='bold 11px ui-monospace,monospace'; ctx.fillStyle=col;
+    ctx.fillText(speaker,boxX+36,boxY+24);
+    if(active.npc.role){ ctx.font='8px ui-monospace,monospace'; ctx.fillStyle='#9a948a'; ctx.fillText(active.npc.role,boxX+36,boxY+36); }
+    const body=(n.text&&n.text[active.line])||'';
+    ctx.font='10px ui-monospace,monospace'; ctx.fillStyle='#e8e2d4';
+    const lines=wrap(body,Math.floor((boxW-32)/6)); let ty=boxY+52;
+    for(const ln of lines){ ctx.fillText(ln,boxX+16,ty); ty+=13; }
+    const last=atLastLine(), hasChoices=last&&n.choices&&n.choices.length;
+    if(hasChoices){
+      let cy=boxY+boxH-8-n.choices.length*12;
+      for(let k=0;k<n.choices.length;k++){
+        const on=k===active.sel;
+        ctx.fillStyle=on?'#f1c75b':'#8d8678'; ctx.font=(on?'bold ':'')+'10px ui-monospace,monospace';
+        ctx.fillText((on?'> ':'  ')+n.choices[k].label,boxX+18,cy); cy+=12;
+      }
+    } else {
+      ctx.textAlign='right'; ctx.font='8px ui-monospace,monospace'; ctx.fillStyle='#9a948a';
+      ctx.fillText(last?'E / Space to end ·':'E / Space ▾',boxX+boxW-14,boxY+boxH-12);
+      ctx.textAlign='left';
+    }
+  }
+  return {isOpen,open,close,input,moveSel,render};
 })();
 
 function sigilBonuses(){
@@ -466,9 +551,9 @@ const TYPES={
   sorcerer:{key:'sorcerer',name:'Hollow Sorcerer',hp:54,dmg:12,speed:20,reward:30,aggro:125,reach:85,ranged:true,color:'#9b74ff'},
   'flying-eye':{key:'flying-eye',asset:'flying-eye',name:'Ledger Eye',hp:42,dmg:9,speed:24,reward:20,aggro:124,reach:82,ranged:true,color:'#b65a48'},
   mushroom:{key:'mushroom',asset:'mushroom',name:'Spore Debtor',hp:48,dmg:7,speed:14,reward:18,aggro:92,reach:18,color:'#9f3e45'},
-  sexton:{key:'sexton',asset:'knight',name:'Gate Sexton Marrow',short:'SEXTON',hp:96,dmg:14,speed:27,reward:34,aggro:108,reach:19,color:'#d8b36b'},
+  sexton:{key:'sexton',asset:'sexton',name:'Gate Sexton Marrow',short:'SEXTON',hp:96,dmg:14,speed:27,reward:34,aggro:108,reach:19,color:'#d8b36b'},
   mempool:{key:'mempool',asset:'sorcerer',name:'Mempool Warden',short:'WARDEN',hp:92,dmg:13,speed:22,reward:42,aggro:125,reach:88,ranged:true,color:'#b88cff'},
-  tallow:{key:'tallow',asset:'sentinel',name:'Mother Tallow',short:'MOTHER TALLOW',hp:260,dmg:22,speed:20,reward:100,aggro:134,reach:28,boss:true,color:'#f1c75b',sigilName:'The Waxen Testament',sigilKey:'waxen-testament'},
+  tallow:{key:'tallow',asset:'tallow',name:'Mother Tallow',short:'MOTHER TALLOW',hp:260,dmg:22,speed:20,reward:100,aggro:134,reach:28,boss:true,color:'#f1c75b',sigilName:'The Waxen Testament',sigilKey:'waxen-testament'},
   foreman:{key:'foreman',asset:'foreman',name:'The Debt Foreman',short:'FOREMAN',hp:200,dmg:20,speed:18,reward:68,aggro:120,reach:22,color:'#4ecbaa'},
   bifurcated:{key:'bifurcated',asset:'bifurcated',name:'Bifurcated Guard',short:'GUARD',hp:160,dmg:16,speed:20,reward:58,aggro:115,reach:20,color:'#d4a83e'},
   ledgerbound:{key:'ledgerbound',asset:'ledgerbound',name:'The Ledger-Bound',short:'LEDGER-BOUND',hp:340,dmg:24,speed:14,reward:160,aggro:140,reach:30,boss:true,color:'#a8c8ff',sigilName:'The Contested Will',sigilKey:'contested-will'},
@@ -650,6 +735,14 @@ addEventListener('keydown',e=>{
   if(!keys[e.code]&&!e.repeat)pressed[e.code]=true;
   keys[e.code]=true;
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
+  if(Dialogue.isOpen()){
+    if(e.repeat)return;
+    if(e.code==='KeyE'||e.code==='Space')Dialogue.input();
+    else if(e.code==='ArrowUp'||e.code==='KeyW')Dialogue.moveSel(-1);
+    else if(e.code==='ArrowDown'||e.code==='KeyS')Dialogue.moveSel(1);
+    else if(e.code==='Escape')Dialogue.close();
+    return;
+  }
   if((e.code==='Space'||e.code==='KeyL'||e.code==='KeyJ')&&!e.repeat){ e.preventDefault(); doAttack(); }
   if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)doDash();
   if(e.code==='KeyQ'&&!e.repeat)targetNearest();
@@ -1151,6 +1244,7 @@ function update(dt){
   if(state.mode==='sequencer'){ if(bossSeq)updateBossSequence(dt); return; }
   if(state.mode!=='town'){ if(modeManager)updateEngineMode(dt); return; }
   syncMouseWorld();
+  if(state.started&&Dialogue.isOpen()){ updateHud(); return; }
   if(state.started){
     if(state.introMercy>0)state.introMercy-=dt;
     updatePlayer(dt);
@@ -1237,6 +1331,7 @@ function drawDecor(){
   for(const b of BRAMBLES)drawBramble(b);
   for(const t of TREES)drawTree(t);
   for(const c of CANDLES)drawCandle(c);
+  drawNpcs();
   drawInteractables();
   const g=worldToScreen(GRACE.x,GRACE.y);
   ctx.globalAlpha=.14; ctx.fillStyle='#f1c75b'; ctx.beginPath(); ctx.arc(g.x,g.y,SAFE_RADIUS*1.25,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
@@ -1381,13 +1476,25 @@ function nearestInteractable(){
   }
   return bestD<36?best:null;
 }
+function nearestNpc(){
+  let best=null, bestD=999;
+  for(const n of (NPCS||[])){
+    const d=Math.hypot(player.x-n.x,player.y-n.y);
+    if(d<bestD){ best=n; bestD=d; }
+  }
+  return bestD<40?best:null;
+}
 function doInteract(){
-  if(!state.started||player.dead||state.graceOpen||state.wardrobeOpen)return;
+  if(!state.started||player.dead||state.graceOpen||state.wardrobeOpen||Dialogue.isOpen())return;
   const i=nearestInteractable();
-  if(!i)return;
-  progress.interactions.add(interactionKey(i));
-  Story.event('interact',{target:i.target,id:i.id});
-  log('<b style="color:#f1c75b">Ledger marked:</b> '+esc(i.label));
+  if(i){
+    progress.interactions.add(interactionKey(i));
+    Story.event('interact',{target:i.target,id:i.id});
+    log('<b style="color:#f1c75b">Ledger marked:</b> '+esc(i.label));
+    return;
+  }
+  const n=nearestNpc();
+  if(n)Dialogue.open(n);
 }
 function drawInteractables(){
   for(const i of INTERACTABLES){
@@ -1408,6 +1515,25 @@ function drawInteractables(){
       ctx.fillText('E',s.x,s.y-24);
     }
   }
+}
+function drawNpcs(){
+  const near=(state.mode==='town'&&!Dialogue.isOpen())?nearestNpc():null;
+  for(const n of (NPCS||[])){
+    const s=worldToScreen(n.x,n.y), col=n.color||'#cfa982';
+    const bob=Math.round(Math.sin(state.time*2+n.x)*1);
+    ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(s.x-8,s.y+1,16,4);
+    rect(s.x-7,s.y-18+bob,14,18,'#2a2620');           // robe / body
+    rect(s.x-6,s.y-17+bob,12,6,col);                  // collar accent
+    rect(s.x-4,s.y-27+bob,8,9,'#cfa982');             // head
+    rect(s.x-4,s.y-30+bob,8,4,col);                   // hood / hat
+    ctx.font='8px ui-monospace,monospace'; ctx.textAlign='center'; ctx.fillStyle='#d8cbae';
+    ctx.fillText(n.name,s.x,s.y-34+bob);
+    if(near===n){
+      ctx.fillStyle='#f1c75b'; ctx.font='bold 9px ui-monospace,monospace';
+      ctx.fillText('E',s.x,s.y-44+bob);
+    }
+  }
+  ctx.textAlign='left';
 }
 function drawShadow(x,y,w,h){
   const s=worldToScreen(x,y); ctx.fillStyle='rgba(0,0,0,.34)'; ctx.fillRect(s.x-w/2,s.y-h/2,w,h);
@@ -1584,6 +1710,7 @@ function draw(){
   drawTargetLine();
   drawParticles();
   drawAim();
+  if(Dialogue.isOpen())Dialogue.render();
 }
 
 /* ------------------------------- HUD ------------------------------------ */
@@ -1607,13 +1734,18 @@ function updateHud(){
   Story.updateHud();
   updateWallet();
   const prompt=document.getElementById('prompt');
+  if(Dialogue.isOpen()){ prompt.style.display='none'; }
+  else{
   const bossEnc=state.mode==='town'?nearestBossEncounter():null;
   const near=nearestInteractable();
+  const npc=state.mode==='town'?nearestNpc():null;
   if(bossEnc){ prompt.style.display='block'; prompt.innerHTML='Press <b>F</b> to face <b>'+esc(bossEnc.type.name)+'</b>'; }
   else if(near){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> - '+esc(near.label); }
+  else if(npc){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to speak with <b>'+esc(npc.name)+'</b>'; }
   else if(nearGrace()&&!state.graceOpen&&!player.dead){ prompt.style.display='block'; prompt.innerHTML='Safe Hearthlight - press <b>G</b> to rest, level, forge'; }
   else if(player.lock&&!player.lock.dead){ prompt.style.display='block'; prompt.innerHTML='Target: <b>'+esc(player.lock.type.name)+'</b>'; }
   else prompt.style.display='none';
+  }
   const boss=enemies.find(e=>e.type.boss&&!e.dead);
   const box=document.getElementById('bossbar');
   if(boss&&(boss.hp<boss.maxHp||dist(boss,player)<130||player.lock===boss)){

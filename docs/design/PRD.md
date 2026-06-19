@@ -370,13 +370,16 @@ to F6.3). *Not legal advice; flagged so it is not a silent omission.*
   Raw client-authored positive RUNE credits to value recipients are rejected, including
   forged transfers that try to add a fake `from` account. The client does not run local
   Chainwell mining while connected, so online reward credits flow through server-issued PoW.
-- **S2.5 — Remaining authority scope. [OPEN]** The Q-S2b implementation closes the PoW
-  credit-tampering path, not every gameplay proof. Reward-source proof is still coarse
-  until the broader S2/U7 migration validates kills, quest completion, level/relic spends,
-  death recovery, character state, and PvP outcomes server-side.
+- **S2.5 — Three-tier server authority enforcement. [DECIDED][IMPLEMENTED]** `server.js`
+  exports and enforces the three-tier model. Raw client Chainwell blocks are disabled;
+  RUNE credit/debit and Hearthlight power spends are server-issued candidates; validated
+  solo outcomes use `segment:complete` before any ledger touch; casual movement remains a
+  canonicalized relay; client-authored PvP result/hit/forfeit messages are rejected until
+  server arbitration is implemented.
 
 **Open / remaining.**
-- **Q-S2a [OPEN]** Block-validation rules for the authoritative Chainwell.
+- **Q-S2a [CLOSED]** Authoritative Chainwell block validation uses `validateBlockCandidate`
+  against the server tip for every accepted `mine:submit`; raw client blocks never append.
 - **Q-S2c [OPEN]** Turn-arbitration protocol for turn-based PvP (turn submission, ordering,
   resolution, timeout/forfeit) — a meaningfully different networking shape from the current
   rebroadcast relay.
@@ -429,7 +432,7 @@ Consolidated. Each is referenced inline above.
 | Q-F6b | Which wrapped-SOL mint to settle in | Architecture |
 | Q-F7a | Status of a character whose window closed with tasks unfinished | Design (gate) |
 | Q-F7b | Transfer-gating mechanism: transfer-hook vs. escrow-program | Architecture |
-| Q-S2a | Block-validation rules for the authoritative Chainwell | Architecture |
+| Q-S2a | CLOSED: authoritative Chainwell validates server-issued `mine:submit` blocks only | Architecture |
 | Q-S2c | Turn-arbitration protocol for turn-based PvP | Architecture |
 
 ---
