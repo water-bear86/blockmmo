@@ -16,11 +16,19 @@ const content = require(path.join(root, 'game', 'content.js'));
 // --- ESM shim for engine/turnbased.js ------------------------------------------------
 function loadTurnBased() {
   let src = fs.readFileSync(path.join(root, 'engine', 'turnbased.js'), 'utf8');
-  src = src.replace(/^export\s+/m, '');                 // drop the single `export` keyword
+  src = src.replace(/^export\s+/gm, '');                 // drop bare ESM exports
   const factory = new Function(src + '\nreturn createTurnBasedMode;');
   return factory();
 }
 const createTurnBasedMode = loadTurnBased();
+
+function loadPlatformer() {
+  let src = fs.readFileSync(path.join(root, 'engine', 'platformer.js'), 'utf8');
+  src = src.replace(/^export\s+/gm, '');
+  const factory = new Function(src + '\nreturn createPlatformerMode;');
+  return factory();
+}
+const createPlatformerMode = loadPlatformer();
 
 // Minimal host api: a deterministic hero hitting for a known amount, capturing duel results.
 function makeApi(opts = {}) {
@@ -99,7 +107,86 @@ ok('TURN_BIFURCATED dual-chain with cross-heal');
 
 assert(LB.opponent.phase2 && LB.opponent.phase2.threshold === 0.4 && LB.opponent.phase2.mergePerTurn > 0,
   'Ledger-Bound opponent.phase2 split+merge');
+assert(LB.finalStroke && LB.finalStroke.requiresCenter === true && LB.finalStroke.sigilKey === 'contested-will',
+  'Ledger-Bound final stroke should require fissure-center and mint contested-will');
 ok('TURN_LEDGERBOUND phase2 split + re-merge');
+
+// ============ 1b. full Area 2 loop + town cast ============
+{
+  const town = content.AREA2_TOWN;
+  assert(town && town.hearthlight && town.hearthlight.free === true && town.hearthlight.safe === true,
+    'Forklight Hearthlight should be free/safe');
+  const npcNames = (town.npcs || []).map(n => n.name).sort();
+  for (const name of ['Keeper of Ancestry', 'Custodian Archivist', 'Librarian Shade', 'Keeper of Margins', 'Vault Custodians']) {
+    assert(npcNames.includes(name), 'Area 2 town includes ' + name);
+  }
+  assert(town.sideQuest && town.sideQuest.interactionKey === 'q06:margin-scroll' && town.sideQuest.effect === 'weaken-debt-foreman',
+    'Keeper of Margins sidequest should point at the Foreman weakening key');
+
+  const quests = content.STORY.quests;
+  for (const id of ['q06', 'q07', 'q08', 'q09']) assert(quests.some(q => q.id === id), 'Area 2 story includes ' + id);
+  assert(quests.find(q => q.id === 'q06').next === 'q07', 'q06 should route into Debt Mines');
+  assert(quests.find(q => q.id === 'q07').next === 'q08', 'q07 should route into Ledger Vaults');
+  assert(quests.find(q => q.id === 'q08').next === 'q09', 'q08 should route into Ledger-Bound');
+  assert(quests.find(q => q.id === 'q09').next === 'q10', 'q09 should open Area 3');
+
+  assert.deepStrictEqual(content.AREA2_ENCOUNTERS.foreman.segments.map(s => s.mode), ['platformer', 'turnbased'],
+    'Foreman loop should be Debt Mines platformer into duel');
+  assert.deepStrictEqual(content.AREA2_ENCOUNTERS.bifurcated.segments.map(s => s.mode), ['battlefield', 'turnbased'],
+    'Bifurcated loop should be Ledger Vaults battlefield into duel');
+  assert.deepStrictEqual(content.AREA2_ENCOUNTERS.ledgerbound.segments.map(s => s.mode), ['platformer', 'battlefield', 'turnbased'],
+    'Ledger-Bound final loop should combine all Area 2 play styles');
+  ok('Area 2 town cast and q06-q09 loop are data-driven and playable');
+}
+
+// ============ 1c. Canon/Schism path choice has live gameplay effects ============
+{
+  const level = content.PLAT_DEBT_MINES;
+  assert(level.fork && level.fork.canon && level.fork.schism && level.fork.crossing, 'Debt Mines should define fork metadata');
+  assert(level.fork.canon.effect.speedMul < 1, 'Canon path should trade speed for stability');
+  assert(level.fork.schism.effect.speedMul > 1 && level.fork.schism.effect.damagePerSecond > 0,
+    'Schism path should trade speed for debt-pressure damage');
+  assert(level.fork.crossing.requiresBothSpellings === true && /RECORDED/.test(level.fork.crossing.solution),
+    'identity puzzle should require both Canon and Schism spellings');
+
+  const api = {
+    viewW: 640, viewH: 360, log() {}, assets: {},
+    player: { hp: 100, maxHp: 100, sta: 100, maxSta: 100,
+      damage(amount) { this.hp = Math.max(0, this.hp - amount); },
+      spendStamina() { return true; },
+      getMeleeDamage() { return 20; },
+    },
+  };
+  const ctx2 = { canvas: { width: 640, height: 360 } };
+  const m = createPlatformerMode(level);
+  m.enter(ctx2, api);
+  const st = m.getState();
+  st.player.x = 100; st.player.y = 90; st.player.vx = 0; st.player.vy = 0;
+  m.update(0.05, { right: true });
+  const canonVx = st.player.vx;
+  assert(m.getState().fork.side === 'canon', 'Canon side should be detected from the left path');
+
+  st.player.x = 1100; st.player.y = 90; st.player.vx = 0; st.player.vy = 0;
+  m.update(0.05, { right: true });
+  const schismVx = st.player.vx;
+  assert(m.getState().fork.side === 'schism', 'Schism side should be detected from the right path');
+  assert(schismVx > canonVx, 'Schism speed modifier should produce higher horizontal velocity');
+  ok('Canon/Schism fork has live platformer effects');
+}
+
+// ============ 1d. Ledger Vaults split arena uses distinct mechanical pressures ============
+{
+  const lv = content.BATTLE_LEDGER_VAULTS;
+  assert(lv.fork && lv.fork.canonZone === 'canon-sanctuary' && lv.fork.schismZone === 'schism-chasm',
+    'Ledger Vaults should label Canon and Schism zones');
+  assert(lv.creatures['canon-auditor'].hp > lv.creatures['schism-shadow'].hp,
+    'Canon Auditor should be tougher than Schism Shadow');
+  assert(lv.creatures['schism-shadow'].speed > lv.creatures['canon-auditor'].speed,
+    'Schism Shadow should be faster than Canon Auditor');
+  const cz = lv.zones.find(z => z.id === lv.fork.canonZone), sz = lv.zones.find(z => z.id === lv.fork.schismZone);
+  assert(cz && sz && cz.regen > sz.regen, 'Canon sanctuary should be safer than Schism chasm');
+  ok('Ledger Vaults battlefield has distinct Canon/Schism gameplay pressure');
+}
 
 // ============ 2. q06 margins is now OPTIONAL (lectern only) ============
 const q06 = content.STORY.quests.find(q => q.id === 'q06');

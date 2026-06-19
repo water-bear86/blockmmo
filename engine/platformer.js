@@ -15,6 +15,7 @@ function call(api, name, ...args){ return api&&typeof api[name]==='function'?api
 export function createPlatformerMode(level={}){
   let ctx=null, api=null, player=null, camera=null, platforms=[], hazards=[], projectiles=[], enemies=[];
   let bossFired=false, bossLocked=false, cameraLock=null, exitFired=false, attackBox=null, lastJump=false, lastSafe=null;
+  let forkState=null, forkTick=0;
   const cfg={...DEF, ...(level.physics||{})};
 
   function reset(){
@@ -39,6 +40,7 @@ export function createPlatformerMode(level={}){
     }));
     camera={x:0,y:0,w:640,h:360};
     bossFired=false; bossLocked=false; cameraLock=null; exitFired=false; attackBox=null; lastJump=false;
+    forkState=level.fork?{side:null, firstChoice:null, switches:0, effectTicks:0}:null; forkTick=0;
     lastSafe={x:spawn.x, y:spawn.y};
   }
 
@@ -94,6 +96,54 @@ export function createPlatformerMode(level={}){
       if((h.type==='slow'||h.type==='sticky')&&hit(b,h))m=Math.min(m, h.slow||h.mult||.45);
     }
     return m;
+  }
+
+  function rectContains(rect, x, y) {
+    return !!rect && x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+  }
+
+  function forkSideAt(x, y) {
+    const f = level.fork;
+    if (!f) return null;
+    if (rectContains(f.canon && f.canon.region, x, y)) return 'canon';
+    if (rectContains(f.schism && f.schism.region, x, y)) return 'schism';
+    if (typeof f.splitX === 'number') return x < f.splitX ? 'canon' : 'schism';
+    return null;
+  }
+
+  function forkEffect(side) {
+    const f = level.fork || {};
+    const data = side && f[side] || {};
+    return data.effect || {};
+  }
+
+  function updateForkState() {
+    if (!forkState) return;
+    const side = forkSideAt(player.x, player.y);
+    if (!side) return;
+    if (!forkState.firstChoice) forkState.firstChoice = side;
+    if (forkState.side && forkState.side !== side) forkState.switches++;
+    forkState.side = side;
+  }
+
+  function forkMoveMul() {
+    if (!forkState || !forkState.side) return 1;
+    const m = forkEffect(forkState.side).speedMul;
+    return Number.isFinite(m) ? m : 1;
+  }
+
+  function applyForkEffect(dt) {
+    if (!forkState || !forkState.side) return;
+    const effect = forkEffect(forkState.side);
+    if (effect.staminaDrain && spend('fork:' + forkState.side, {mode:'platformer', side:forkState.side}) === false) return;
+    if (effect.damagePerSecond) {
+      forkTick += dt;
+      if (forkTick >= (effect.damageEvery || 0.5)) {
+        forkTick = 0;
+        hurt(effect.damagePerSecond * (effect.damageEvery || 0.5), {type:'fork', side:forkState.side});
+        forkState.effectTicks++;
+      }
+    }
   }
 
   function moveX(dt, dir, mul){
@@ -329,7 +379,8 @@ export function createPlatformerMode(level={}){
     if(player.attackCd>0)player.attackCd=Math.max(0, player.attackCd-dt);
     if(attackBox){ attackBox.t-=dt; if(attackBox.t<=0)attackBox=null; }
     const dir=(inputDown(input,'right','moveRight')?1:0)-(inputDown(input,'left','moveLeft')?1:0);
-    const mul=slowMul();
+    updateForkState();
+    const mul=slowMul()*forkMoveMul();
     moveX(dt, dir, mul);
     doJump(input, dt);
     player.vy+=cfg.gravity*dt;
@@ -339,6 +390,7 @@ export function createPlatformerMode(level={}){
     damageEnemies();
     updateEnemies(dt);
     updateHazards(dt);
+    applyForkEffect(dt);
     triggers();
     // Fell into a pit — respawn at last safe ground with a small toll, never strand at the clamp line.
     const floor=(level.height||camera.h);
@@ -502,6 +554,6 @@ export function createPlatformerMode(level={}){
 
   return {
     enter, exit, update, render,
-    getState(){ return {player, camera, platforms, hazards, projectiles, enemies, bossFired, bossLocked}; }
+    getState(){ return {player, camera, platforms, hazards, projectiles, enemies, bossFired, bossLocked, fork: forkState}; }
   };
 }

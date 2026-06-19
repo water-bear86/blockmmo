@@ -11,8 +11,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "auditor": {
     "name": "auditor",
@@ -26,8 +25,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "bifurcated": {
     "name": "bifurcated",
@@ -41,8 +39,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "canon-auditor": {
     "name": "canon-auditor",
@@ -56,8 +53,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "cascade": {
     "name": "cascade",
@@ -71,8 +67,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "flying-eye": {
     "name": "flying-eye",
@@ -101,8 +96,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "free-knight-attack": {
     "name": "free-knight-attack",
@@ -241,8 +235,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "ledgerbound": {
     "name": "ledgerbound",
@@ -256,8 +249,21 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
+  },
+  "mempool": {
+    "name": "mempool",
+    "type": "strip",
+    "layout": "row",
+    "frameW": 56,
+    "frameH": 56,
+    "file": "mempool.png",
+    "frames": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt"
+    ]
   },
   "mushroom": {
     "name": "mushroom",
@@ -490,8 +496,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "relic-tallow-brand": {
     "name": "relic-tallow-brand",
@@ -525,8 +530,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "scrivener": {
     "name": "scrivener",
@@ -540,8 +544,35 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
+  },
+  "sexton": {
+    "name": "sexton",
+    "type": "strip",
+    "layout": "row",
+    "frameW": 56,
+    "frameH": 56,
+    "file": "sexton.png",
+    "frames": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt"
+    ]
+  },
+  "tallow": {
+    "name": "tallow",
+    "type": "strip",
+    "layout": "row",
+    "frameW": 64,
+    "frameH": 64,
+    "file": "tallow.png",
+    "frames": [
+      "idle",
+      "walk",
+      "attack",
+      "hurt"
+    ]
   },
   "tallow-echo": {
     "name": "tallow-echo",
@@ -555,8 +586,7 @@
       "walk",
       "attack",
       "hurt"
-    ],
-    "placeholder": true
+    ]
   },
   "tiles-rogue": {
     "name": "tiles-rogue",
