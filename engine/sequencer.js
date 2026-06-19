@@ -5,9 +5,9 @@
 // active mode (F3.2). Segment payloads reuse the existing level/encounter formats (F3.4).
 //
 // Script shape:
-//   { id, name, beat?, carry?:['hp','sta'],
+//   { id, name, beat?, transitionText?, carry?:['hp','sta'],
 //     segments:[ { mode:'platformer'|'battlefield'|'turnbased', name?, payload, beat?,
-//                  beatText?, complete:{ event } } ] }
+//                  beatText?, transitionText?, complete:{ event } } ] }
 //
 // Completion (Q-F3a): the host fires segmentEvent(eventName, payload) from the engines'
 // existing seam events (platformer onBossTrigger='boss'/onExit='exit', battlefield
@@ -19,17 +19,17 @@ function call(fn, ...args) { return typeof fn === 'function' ? fn(...args) : und
 export function createSegmentSequencer(script = {}) {
   let api = null, deps = null;
   const segments = script.segments || [];
-  let index = -1, active = null, beatT = 0, beatMsg = '', done = false, result = null;
+  let index = -1, active = null, beatT = 0, beatTitle = '', beatMsg = '', done = false, result = null;
 
   // deps: { startMode(segment), exitMode(), log(msg) }  — host wires these to its mode manager.
   function enter(nextApi, nextDeps) {
     api = nextApi || {}; deps = nextDeps || {};
-    index = -1; active = null; beatT = 0; done = false; result = null;
+    index = -1; active = null; beatT = 0; beatTitle = ''; beatMsg = ''; done = false; result = null;
     advance();
   }
 
   function advance() {
-    if (active) call(deps.exitMode);
+    if (active) { call(deps.exitMode); active = null; }
     index++;
     if (index >= segments.length) {
       done = true; result = { script: script.id || 'boss', name: script.name, completed: true };
@@ -38,6 +38,7 @@ export function createSegmentSequencer(script = {}) {
       return;
     }
     const seg = segments[index];
+    beatTitle = seg.transitionText || script.transitionText || 'Gate slams shut.';
     beatMsg = seg.beatText || script.name || '';
     beatT = seg.beat != null ? seg.beat : (script.beat != null ? script.beat : 0.6);
     active = { seg, started: false };
@@ -74,12 +75,17 @@ export function createSegmentSequencer(script = {}) {
   function render(ctx, cam) {
     if (beatT <= 0 || !ctx) return false;
     const W = (cam && cam.w) || 640, H = (cam && cam.h) || 360;
+    const detail = beatMsg && beatMsg !== beatTitle ? beatMsg : '';
     ctx.save();
     ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#d6a84f'; ctx.font = '16px ui-monospace,monospace'; ctx.textAlign = 'center';
-    ctx.fillText(beatMsg || '…', W / 2, H / 2 - 4);
+    ctx.fillText(beatTitle || 'Gate slams shut.', W / 2, H / 2 - (detail ? 12 : 4));
+    if (detail) {
+      ctx.fillStyle = '#cbbf9f'; ctx.font = '12px ui-monospace,monospace';
+      ctx.fillText(detail, W / 2, H / 2 + 8);
+    }
     ctx.fillStyle = '#8c8470'; ctx.font = '11px ui-monospace,monospace';
-    ctx.fillText('segment ' + Math.min(index + 1, segments.length) + ' of ' + segments.length, W / 2, H / 2 + 16);
+    ctx.fillText('segment ' + Math.min(index + 1, segments.length) + ' of ' + segments.length, W / 2, H / 2 + (detail ? 28 : 16));
     ctx.restore();
     return true;
   }
@@ -89,6 +95,6 @@ export function createSegmentSequencer(script = {}) {
     isBeat() { return beatT > 0; },
     isDone() { return done; },
     activeMode() { return active && active.started ? active.seg.mode : null; },
-    getState() { return { index, total: segments.length, done, beatT, seg: active && active.seg, result }; },
+    getState() { return { index, total: segments.length, done, beatT, beatTitle, beatMsg, seg: active && active.seg, result }; },
   };
 }

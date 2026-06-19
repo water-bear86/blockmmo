@@ -265,13 +265,14 @@ locally for boss phases and the solo demo.
 `createSegmentSequencer(script)` sits ABOVE the mode manager (F3.2). A boss is a data-driven
 SCRIPT of ordered segments, each naming a mode + a level/encounter payload + a completion
 event. On completion the sequencer plays a brief diegetic transition beat (F3.3) and advances,
-telling the host to swap the active mode. Segment payloads reuse the platformer/battlefield/
-turnbased formats unchanged (F3.4).
+telling the host to swap the active mode. The default wipe presents "Gate slams shut." and can
+be overridden per script or segment with `transitionText`. Segment payloads reuse the
+platformer/battlefield/turnbased formats unchanged (F3.4).
 
 ```js
-{ id, name, beat?,
+{ id, name, beat?, transitionText?,
   segments:[ { mode:'platformer'|'battlefield'|'turnbased', name?, payload, beat?, beatText?,
-               complete:{ event } } ] }
+               transitionText?, complete:{ event } } ] }
 ```
 
 Completion (Q-F3a) reuses the engines' seam events, forwarded by the host via
