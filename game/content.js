@@ -348,6 +348,57 @@ const AREA1_LORE=[
     ] }
 ];
 
+/* ---- Area 1 — ledger puzzles (issue #26, world & content lane) ------------ */
+/* Q-N3: the old "puzzles" were puzzle SHAPE — press E N times in any order. These two require
+   deliberate thought tied to the bureaucratic/ledger theme: read the clue + the inscriptions,
+   DEDUCE the activation order, and stamp the stones in that order. A wrong stamp blanks the
+   ledger (progress resets). Solving reveals a Codex fragment. `order` is the correct node-id
+   sequence and is intentionally NOT the spatial (x-sorted) order, so the clue is required to
+   solve — the host engine never reveals the order. Off the q01-q05 quest corridor; optional;
+   no power reward. Consumed by index.html nearestPuzzleTarget()/stampPuzzle()/drawPuzzles(). */
+const AREA1_PUZZLES=[
+  { id:'reconciliation', title:'The Reconciliation Yard',
+    clue:{ id:'recon-board', x:386, y:150, label:'TALLY BOARD',
+      lines:[
+        'TALLY BOARD: "The Chainwell settles the smallest debt before the great."',
+        'Stamp the ledger stones from least owed to greatest. A false tally blanks the slate.'
+      ] },
+    // amounts deliberately scrambled in space; correct order is ascending by value.
+    nodes:[
+      { id:'r-47', value:47, label:'47', x:300, y:190, inscription:'Ledger stone — debt of 47 marks.' },
+      { id:'r-8',  value:8,  label:'8',  x:470, y:250, inscription:'Ledger stone — debt of 8 marks.'  },
+      { id:'r-23', value:23, label:'23', x:320, y:262, inscription:'Ledger stone — debt of 23 marks.' },
+      { id:'r-12', value:12, label:'12', x:462, y:182, inscription:'Ledger stone — debt of 12 marks.' }
+    ],
+    order:['r-8','r-12','r-23','r-47'],
+    stamp:'The stone settles. The slate accepts the tally.',
+    wrong:'The tally does not balance — the slate blanks itself.',
+    solvedLore:[
+      'The four stones settle flush. A seam in the yard wall grinds open onto nothing — only dust.',
+      'Codex: "Reconciliation is not forgiveness. The Chainwell only wants the order right."'
+    ] },
+  { id:'debt-chain', title:'The Writ of Succession',
+    clue:{ id:'writ-board', x:-230, y:150, label:'OPENING WRIT',
+      lines:[
+        'OPENING WRIT: "Begin with Pell, who first broke faith."',
+        'Each writ names the soul its debtor owes. Follow the chain to its settled end.'
+      ] },
+    // each marker names WHO it owes; trace Pell -> Marrow -> Goss -> Vance (settled).
+    nodes:[
+      { id:'w-vance',  label:'VANCE',  x:-300, y:190, inscription:'Writ of Vance — "Vance owes no one. Settled."' },
+      { id:'w-goss',   label:'GOSS',   x:-150, y:282, inscription:'Writ of Goss — "Goss owes Vance."'    },
+      { id:'w-pell',   label:'PELL',   x:-160, y:200, inscription:'Writ of Pell — "Pell owes Marrow."'   },
+      { id:'w-marrow', label:'MARROW', x:-280, y:262, inscription:'Writ of Marrow — "Marrow owes Goss."' }
+    ],
+    order:['w-pell','w-marrow','w-goss','w-vance'],
+    stamp:'The writ is countersigned. The next debtor waits.',
+    wrong:'No writ binds these two — the chain falls slack and you must begin again.',
+    solvedLore:[
+      'The four writs braid into a single cord and burn cold. The succession is closed.',
+      'Codex: "Every debt names another. Trace far enough and you find a name that owes only the Chainwell."'
+    ] }
+];
+
 const ASSETS={
   tiles:{src:'assets/pixel/tiles-parish.png',w:16,h:16,img:null},
   playerDir:{src:'assets/pixel/player-directions.png',w:56,h:56,img:null},
@@ -733,7 +784,7 @@ const NPCS=[
 ];
 
   return {
-    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE,
+    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES,
     PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
     TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
     AREA2_TOWN, PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,
