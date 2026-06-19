@@ -710,7 +710,7 @@ const engineApi={
   onExit(id){ if(bossSeq&&state.mode==='sequencer'){ bossSeq.segmentEvent('exit',{id}); return; } log('Stage cleared ('+id+').'); exitEngineMode(); },
   onCreatureDefeated(){}, onWaveSpawn(w){ if(w&&w.id)log('Wave incoming: '+w.id); },
   onZoneCleared(id){ log('Safe ground secured: '+id); }, onMeleeHit(){},
-  onDuelAccepted(m){ log('Duel accepted.'); if(state.mode==='battlefield')startTurnDuel(m&&m.from); },
+  onDuelAccepted(m){ log('Duel accepted.'); if(state.mode==='battlefield')startTurnDuel(m&&m.from,m&&m.duelId); },
   onDuelResult(r){ if(bossSeq&&state.mode==='sequencer'){ bossSeq.segmentEvent('duel',r); return; } log('Duel: '+((r&&r.reason)||'over')); },
   onBossComplete(script){ const e=bossEncounterEnemy; log((script&&script.name||'The boss')+' is overcome.'); endBossSequence(); if(e&&!e.dead)killEnemy(e); } };
 function engineInput(){
@@ -750,10 +750,10 @@ function updateEngineMode(dt){
 /* Segment sequencer (F3): chains play-styles into one boss encounter, above the mode manager. */
 /* F2.3: real-time battlefield initiates a PvP encounter (rc:pvp handshake); on accept,
    both combatants transition into the turn-based mode to resolve it. */
-function startTurnDuel(peerName){
+function startTurnDuel(peerName, duelId){
   if(state.mode!=='battlefield'||!RCEngine||!RCEngine.createTurnBasedMode)return;
   const ep=engineApi.player; player.hp=Math.round(ep.hp); player.sta=ep.sta;
-  const enc={id:'pvp-duel',name:'Duel',peerId:peerName||'stub-rival',opponent:{name:(peerName||'Rival')+' Recorded',hp:90,attack:11,defense:1,color:'#6f7db0',sprite:'phantom'}};
+  const enc={id:duelId||'pvp-duel',name:'Duel',peerId:peerName||'stub-rival',duelId:duelId||null,opponent:{name:(peerName||'Rival')+' Recorded',hp:90,attack:11,defense:1,color:'#6f7db0',sprite:'phantom'}};
   const mode=turnbasedMode=RCEngine.createTurnBasedMode(enc);
   modeManager.setMode(mode, ctx, engineApi); state.mode='turnbased'; Net.updatePeers();
   log('Settling accounts — a turn-based duel begins. (T to leave)');

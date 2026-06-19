@@ -343,6 +343,7 @@ export function createBattlefieldMode(level={}){
     duel={id:duelId, peerId:ch.from, status:'active', startedAt:elapsed, peer:null, result:null};
     delete pending[duelId];
     send({t:PVP_TYPES.accept, duelId, to:duel.peerId});
+    call(api, 'onDuelAccepted', {t:PVP_TYPES.accept, duelId, from:duel.peerId, to:localId()}, {mode:'battlefield', acceptedBy:localId()});
     call(api, 'log', 'Duel accepted: '+duelId+'.');
     return true;
   }

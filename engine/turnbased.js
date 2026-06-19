@@ -29,11 +29,16 @@ const DUAL_ACTIONS = [
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function rnd(a, b) { return a + Math.random() * (b - a); }
 function call(api, name, ...args) { return api && typeof api[name] === 'function' ? api[name](...args) : undefined; }
+function num(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 export function createTurnBasedMode(encounter = {}) {
   let ctx = null, api = null, camera = null;
   let phase = 'intro', timer = 0, menuIndex = 0, logLine = '', result = null;
   let hero = null, foe = null, pending = null, shakeT = 0, heroFlash = 0, foeFlash = 0;
+  let initiative = null, turnNumber = 1, actor = 'hero', submittedAction = null, finished = false;
   const prev = { up: false, down: false, confirm: false, flee: false };
 
   function reset() {
@@ -53,9 +58,30 @@ export function createTurnBasedMode(encounter = {}) {
                  b: { hp: dc.b.hp, maxHp: dc.b.hp, label: dc.b.label || 'B', color: dc.b.color || '#4ecb7a' } };
       foe.crossHeal = !!dc.crossHeal;
     } else if (o.phase2) { foe.phase2 = o.phase2; }
-    phase = 'intro'; timer = 0.9; menuIndex = 0; pending = null; result = null;
+    initiative = rollInitiative(p, o);
+    phase = 'intro'; timer = 0.9; menuIndex = 0; pending = null; submittedAction = null; result = null; finished = false;
+    turnNumber = 1; actor = initiative.first;
     shakeT = 0; heroFlash = 0; foeFlash = 0;
     logLine = (encounter.peerId ? 'A duel begins — ' : 'You face ') + foe.name + '.';
+  }
+
+  function rollInitiative(player, opponent) {
+    const heroCfg = encounter.hero || encounter.player || {};
+    const initCfg = encounter.initiative;
+    let heroInit = num(heroCfg.initiative, num(heroCfg.speed, num(player && player.initiative, num(player && player.speed, 10))));
+    let foeInit = num(opponent.initiative, num(opponent.speed, 8));
+    let first = foeInit > heroInit ? 'foe' : 'hero';
+
+    if (initCfg && typeof initCfg === 'object') {
+      heroInit = num(initCfg.hero, heroInit);
+      foeInit = num(initCfg.foe, foeInit);
+      first = foeInit > heroInit ? 'foe' : 'hero';
+      if (initCfg.first === 'hero' || initCfg.first === 'foe') first = initCfg.first;
+    } else if (initCfg === 'hero' || initCfg === 'foe') {
+      first = initCfg;
+    }
+    if (encounter.firstTurn === 'hero' || encounter.firstTurn === 'foe') first = encounter.firstTurn;
+    return { hero: heroInit, foe: foeInit, first };
   }
 
   function enter(nextCtx, nextApi) {
@@ -92,7 +118,7 @@ export function createTurnBasedMode(encounter = {}) {
   function activeActions() { return foe && foe.dc ? DUAL_ACTIONS : ACTIONS; }
 
   function chooseAction(key) {
-    pending = key; phase = 'heroResolve'; timer = 0.4;
+    pending = key; submittedAction = key; actor = 'hero'; phase = 'heroResolve'; timer = 0.4;
     if (key === 'strike') logLine = 'You strike at ' + foe.name + '.';
     else if (key === 'strikeA') logLine = 'You strike the ' + foe.dc.a.label + ' chain.';
     else if (key === 'strikeB') logLine = 'You strike the ' + foe.dc.b.label + ' chain.';
@@ -134,14 +160,14 @@ export function createTurnBasedMode(encounter = {}) {
         foe.lastBoth = false;
       } else if (pending === 'flee') {
         result = { duelId: encounter.duelId, reason: 'fled', winner: encounter.peerId || foe.name, loser: hero.name };
-        phase = 'lose'; timer = 0.7; return;
+        phase = 'lose'; actor = 'none'; timer = 0.7; return;
       }
       foeFlash = 0.2; shakeT = 0.18; foe.guarding = false;
       if (foe.dc.a.hp <= 0 && foe.dc.b.hp <= 0) {
         result = { duelId: encounter.duelId, reason: 'defeat', winner: hero.name, loser: foe.name };
-        phase = 'win'; timer = 0.9;
+        phase = 'win'; actor = 'none'; timer = 0.9;
         logLine = foe.phase2 ? 'Both chains fracture from the center.' : foe.name + ' falls — both chains severed.';
-      } else { phase = 'foeWindup'; timer = 0.55; }
+      } else { turnNumber++; pending = null; actor = 'foe'; phase = 'foeWindup'; timer = 0.55; }
       return;
     }
     if (pending === 'strike') {
@@ -163,11 +189,11 @@ export function createTurnBasedMode(encounter = {}) {
       } else { logLine = 'Not enough stamina — the strike falters.'; }
     } else if (pending === 'flee') {
       result = { duelId: encounter.duelId, reason: 'fled', winner: encounter.peerId || foe.name, loser: hero.name };
-      phase = 'lose'; timer = 0.7; return;
+      phase = 'lose'; actor = 'none'; timer = 0.7; return;
     }
     foe.guarding = false; // foe's guard only blocks one incoming blow
-    if (foe.hp <= 0) { result = { duelId: encounter.duelId, reason: 'defeat', winner: hero.name, loser: foe.name }; phase = 'win'; timer = 0.9; logLine = foe.name + ' falls.'; }
-    else { phase = 'foeWindup'; timer = 0.55; }
+    if (foe.hp <= 0) { result = { duelId: encounter.duelId, reason: 'defeat', winner: hero.name, loser: foe.name }; phase = 'win'; actor = 'none'; timer = 0.9; logLine = foe.name + ' falls.'; }
+    else { turnNumber++; pending = null; actor = 'foe'; phase = 'foeWindup'; timer = 0.55; }
   }
 
   function resolveFoe() {
@@ -179,7 +205,7 @@ export function createTurnBasedMode(encounter = {}) {
                  b: { hp: p.bHp, maxHp: p.bHp, label: p.bLabel || 'B', color: p.bColor || '#4ecb7a' } };
       foe.crossHeal = false; menuIndex = 0; foe.guarding = false;
       logLine = foe.name + ' splits along the fissure!';
-      phase = 'menu'; return;
+      turnNumber++; actor = 'hero'; phase = 'menu'; return;
     }
     // MERGE REGEN (additive): while split, the re-merging halves regenerate each foe turn
     // unless the hero's last action was Strike Both (which holds the split open).
@@ -203,11 +229,13 @@ export function createTurnBasedMode(encounter = {}) {
       logLine = (heavy ? foe.name + ' lands a heavy blow — ' : foe.name + ' hits for ') + dmg + '.';
     }
     hero.guarding = false;
-    if (hero.hp <= 0) { result = { duelId: encounter.duelId, reason: 'defeat', winner: foe.name, loser: hero.name }; phase = 'lose'; timer = 0.9; }
-    else { phase = 'menu'; }
+    if (hero.hp <= 0) { result = { duelId: encounter.duelId, reason: 'defeat', winner: foe.name, loser: hero.name }; phase = 'lose'; actor = 'none'; timer = 0.9; }
+    else { turnNumber++; actor = 'hero'; phase = 'menu'; }
   }
 
   function finish() {
+    if (finished) return;
+    finished = true; actor = 'none';
     call(api, 'onDuelResult', result || { reason: 'over' }, { mode: 'turnbased' });
     call(api, 'onExit', encounter.id || 'turnbased', { mode: 'turnbased', result });
   }
@@ -219,7 +247,17 @@ export function createTurnBasedMode(encounter = {}) {
     if (heroFlash > 0) heroFlash = Math.max(0, heroFlash - dt);
     if (foeFlash > 0) foeFlash = Math.max(0, foeFlash - dt);
     const e = edges(input);
-    if (phase === 'intro') { timer -= dt; if (timer <= 0) { phase = 'menu'; logLine = 'Choose your move.'; } return; }
+    if (phase === 'intro') {
+      timer -= dt;
+      if (timer <= 0) {
+        if (initiative && initiative.first === 'foe') {
+          actor = 'foe'; phase = 'foeWindup'; timer = 0.55; logLine = foe.name + ' has initiative.';
+        } else {
+          actor = 'hero'; phase = 'menu'; logLine = 'Choose your move.';
+        }
+      }
+      return;
+    }
     if (phase === 'menu') {
       const A = activeActions();
       if (menuIndex >= A.length) menuIndex = 0;
@@ -301,5 +339,21 @@ export function createTurnBasedMode(encounter = {}) {
     c.restore();
   }
 
-  return { enter, exit, update, render, getState() { return { phase, hero, foe, menuIndex, result, logLine, dc: (foe && foe.dc) || null }; } };
+  return {
+    enter, exit, update, render,
+    getState() {
+      return {
+        phase, hero, foe, menuIndex, result, logLine, dc: (foe && foe.dc) || null,
+        turn: {
+          number: turnNumber,
+          round: Math.max(1, Math.ceil(turnNumber / 2)),
+          actor,
+          pendingAction: pending,
+          submittedAction,
+          initiative,
+        },
+        finished,
+      };
+    },
+  };
 }

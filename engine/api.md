@@ -218,7 +218,8 @@ They surface events (`onCreatureDefeated`, `onZoneCleared`, `onBossTrigger`,
 ## Turn-based RPG battle mode (`turnbased.js`, PRD F2.4)
 
 `createTurnBasedMode(encounter)` returns the same `{enter, exit, update, render, getState}`
-interface. Two combatants, strict alternating turns, a Strike/Guard/Focus/Flee command menu.
+interface. Two combatants, initiative-selected first actor, alternating turns, and a
+Strike/Guard/Focus/Flee command menu.
 Reads the action-shape input (Up/Down navigate, confirm = attack/jump/confirm) with internal
 rising-edge detection, so the host stays source-agnostic (A3). Damage uses
 `api.player.getMeleeDamage('turnbased')`; Focus is gated by `api.player.spendStamina`.
@@ -226,14 +227,21 @@ Resolution is surfaced through `api.onDuelResult(result)` and `api.onExit(id)`.
 
 ```js
 { id, name,
-  opponent:{ name, hp, attack, defense?, color? },   // scripted/AI foe (boss RPG phase)
-  peerId?, duelId? }                                  // set => resolved from an rc:pvp duel (F2.3)
+  opponent:{ name, hp, attack, defense?, color?, initiative?, speed? }, // scripted/AI foe
+  hero?:{ initiative?, speed? },
+  initiative?: "hero"|"foe"|{ hero?, foe?, first? },
+  firstTurn?: "hero"|"foe",                            // explicit override when needed
+  peerId?, duelId? }                                   // set => resolved from an rc:pvp duel (F2.3)
 ```
+
+`getState().turn` exposes `{ number, round, actor, pendingAction, submittedAction, initiative }`.
+Hero wins initiative ties, so existing encounters remain hero-first unless configured otherwise.
 
 PvP resolution (F2.3): the real-time battlefield initiates via `rc:pvp:challenge`/`accept`;
 on `api.onDuelAccepted`, the host swaps the mode manager into the turn-based mode with the
-peer as opponent. Server-authoritative turn arbitration over the live relay (Q-S2c) is open;
-the mode resolves locally for boss phases and the solo demo.
+peer as opponent and preserves the accepted `duelId` on the local encounter result.
+Server-authoritative turn arbitration over the live relay (Q-S2c) is open; the mode resolves
+locally for boss phases and the solo demo.
 
 ## Segment sequencer (`sequencer.js`, PRD F3)
 
