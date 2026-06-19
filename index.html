@@ -176,7 +176,7 @@
 <div id="levelup">
   <div class="panel">
     <h2>Hearthlight</h2>
-    <div class="gsub">Rest safely. Spend confirmed RUNE on power or forge soulbound relics.</div>
+    <div class="gsub">Rest safely. Spend confirmed RUNE on power or forge RUNE relics.</div>
     <div class="lvrow"><span>Level</span><b id="lvLevel">1</b></div>
     <div class="lvrow"><span>Spendable RUNE</span><b id="lvBal">0.00</b></div>
     <div class="lvrow"><span>Next level costs</span><b id="lvCost">30</b></div>
@@ -966,7 +966,7 @@ document.querySelectorAll('.statbtn').forEach(b=>b.addEventListener('click',()=>
 document.getElementById('lvclose').onclick=closeGrace;
 function renderRelics(sp){
   const list=document.getElementById('itemlist');
-  list.innerHTML='<div class="gsub">Forge soulbound RUNE relics</div>';
+  list.innerHTML='<div class="gsub">Forge RUNE relics</div>';
   for(const it of RELICS){
     const own=ownedItem(it.id);
     const row=document.createElement('div'); row.className='itemrow';

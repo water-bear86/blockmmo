@@ -5,15 +5,13 @@
 >
 > - **[DECIDED]** — settled in conversation; treat as intent.
 > - **[OPEN]** — a real unresolved question; needs a decision before build.
-> - **[TENSION]** — conflicts with the ratified canon; see the Conflict Register.
 > - **[NUMBER]** — design intent is decided, the value is a balance-tuning placeholder.
 >
 > **Authority note.** [`DESIGN-BIBLE.md`](DESIGN-BIBLE.md) remains the **ratified
-> source of truth**. This PRD is a **proposed economy/gameplay revision** layered on
-> top of it. Where the two disagree (power, cash-out, combat stakes), the bible stays
-> canon until explicitly reconciled — every such point is logged in the
-> [Conflict Register](#conflict-register-prd-vs-ratified-design-bible) and marked
-> **[TENSION]** inline. Do not treat **[TENSION]** items as canon.
+> source of truth**. This PRD has been **reconciled** with the bible (as of
+> 2026-06-14 rulings 7–10). Its requirements now reflect the ratified economy:
+> Gold is cosmetics-only, death has no item loss, and characters are
+> conditionally-transferable assets sellable at season end.
 
 ---
 
@@ -51,14 +49,12 @@ These hold across every feature below. They exist once, here, so they cannot dri
 - **U2 — Money never skips the grind. [DECIDED]** Season completion is gated on
   performing the mandatory grind tasks. No purchase bypasses that gate; miss the tasks
   and the season is not complete regardless of spend.
-- **U3 — Paid acceleration is hard-capped. [DECIDED][NUMBER]** Real money can speed the
-  grind up to a ceiling; past the ceiling payer and non-payer are identical. The cap is
-  the *whole* story on paid advantage — there is no second, uncapped paid lever (see
-  F4/Death recovery, which is deliberately RUNE-only to preserve this).
-- **U4 — Paid quality-of-life resets every season, for everyone. [DECIDED]** Real-money
-  QOL boosts are seasonal and non-durable. They evaporate at each season boundary for
-  every role (owner, buyer, seller). They are therefore never tradeable and never carry
-  across a sale.
+- **U3 — Gold is cosmetics-only. [DECIDED]** Per Ruling 7, Gold buys dyes,
+  vestments, skins, and VFX only. It never touches progression speed, power,
+  or the grind. There is no paid acceleration lever.
+- **U4 — Paid cosmetics are seasonal resets (if sold). [DECIDED]** Per Ruling 8,
+  a character's collection (items + cosmetics) persists if they stay with the
+  owner, but stats reset on sale or season-restart.
 - **U5 — One real-value exit only. [DECIDED]** The single way value leaves the system to
   a player is **selling a completed character**. RUNE, Gold, relics, and sigils never
   individually cash out.
@@ -164,23 +160,17 @@ them and is consistent with the bible's intent.
 
 ---
 
-### F4 — Death, loss, and recovery
+### F4 — Death and consequences
 
-**What the player does.** On losing a fight, drops a portion of their items/currency, and
-can recover the dropped portion by grinding the cost back.
+**What the player does.** On losing a fight, the player is returned to the
+nearest Hearthlight.
 
-- **F4.1 — Partial loss on death. [DECIDED][NUMBER]** Death drops *some* of the player's
-  items/currency, not all. The retained-vs-dropped fraction is a balance placeholder.
-- **F4.2 — Recovery is RUNE-only. [DECIDED]** The dropped portion is recovered by paying
-  **RUNE** (the grind currency). This makes recovery a pure **grind sink** — the
-  sustainability lever the economy needs — and deliberately keeps **Gold out of the
-  combat-consequence path**, preserving U1/U3. *(This resolved an earlier tension: Gold was
-  briefly considered for recovery; it was closed off precisely because an uncapped
-  Gold-funded recovery would route around the U3 cap.)*
-
-**[TENSION] vs. canon.** The bible rules PvP/endgame stakes as **cosmetic only, no power
-transfer, no farmable power**. Real item/currency loss on death is power-bearing and is a
-proposed revision. See Conflict Register C3.
+- **F4.1 — No item or currency loss on death. [DECIDED]** Per Ruling 8, death
+  is a setback in time/position only. The player never drops items, RUNE, or
+  Gold. This preserves the "Safe rest" and "No farmable power" invariants.
+- **F4.2 — Power reset is sale-only. [DECIDED]** Power (levels) is only reset
+  when a character is sold or a new season begins. Normal gameplay death does
+  not affect stats.
 
 **Open.**
 - **Q-F4a [OPEN][NUMBER]** What fraction of items/currency is lost vs. retained on death?
@@ -199,10 +189,10 @@ Two currencies, and the line between them is the design.
 - **Gold** — the real-money-adjacent currency. Funds cosmetics **and** the capped grind
   acceleration (U3). Two one-way on-ramps fill it; there is no Gold cash-out.
 
-- **F5.1 — Paid quality-of-life, capped. [DECIDED][NUMBER]** Real money buys "quality of
-  stuff": cosmetics, plus grind acceleration up to the U3 cap. It never buys an exclusive
-  advantage (U1) and never skips the mandatory grind (U2). The cap's unit (max % boost, or
-  capped count of boosted actions per day/season) is a balance placeholder.
+- **F5.1 — Gold buys cosmetics only. [DECIDED]** Per Ruling 7, Gold is
+  strictly for "quality of looks": dyes, vestments, skins, and VFX. It never
+  buys an exclusive advantage (U1), never skips the mandatory grind (U2), and
+  never accelerates progression.
 - **F5.2 — Paid QOL is seasonal. [DECIDED]** Per U4, all purchased QOL resets at each
   season boundary, for every role.
 - **F5.3 — On-ramps. [DECIDED]** (a) Convert confirmed RUNE → Gold at a flat rate;
@@ -212,14 +202,6 @@ Two currencies, and the line between them is the design.
   operator-discretion bucket (covers paying artists for skins, promotion, etc.) — **not** a
   committed player-facing prize pool. The 15% ops fee is a single wallet, one recipient.
 
-**[TENSION] vs. canon.** The bible's inviolable rule is "**Gold buys cosmetics only, never
-power**." F5.1's capped grind acceleration is Gold touching progression *speed*, which the
-bible's framing forbids. This is the single largest proposed revision. See Conflict
-Register C1.
-
-**Code discrepancy (low-risk relabel). [DECIDED]** The repo's `ECON` table names the 35%
-destination `PRIZE_POOL` / "prize pool." Design intent is **marketing**. This is a
-naming change, not a behavior change — log and relabel.
 
 **Open.**
 - **Q-F5a [OPEN][NUMBER]** The U3 cap's exact unit and value.
@@ -295,10 +277,6 @@ The most load-bearing feature: the only way value ever leaves the system (U5).
   uniformly: non-seller keeps earned + loses paid-QOL each season; buyer inherits earned +
   loses paid-QOL each season; seller cashes out + restarts at zero. No special cases.
 
-**[TENSION] vs. canon.** The bible (and README) treat characters/relics as **soulbound**
-with **no season-sale cash-out** — its only economic exits are cosmetic. F7's
-conditionally-transferable character with a real cash-out is a major proposed revision.
-See Conflict Register C2.
 
 **Risk — this is the #1 legal-review item.** Concentrating all cash-out into character
 sales does not remove regulatory exposure; it *relocates* it. A market where completed
@@ -439,23 +417,16 @@ Consolidated. Each is referenced inline above.
 
 ## Conflict Register (PRD vs. ratified DESIGN-BIBLE)
 
-**RECONCILED 2026-06-14.** C1–C4 were ruled and promoted into `DESIGN-BIBLE.md` (rulings 7–10),
-which is now canon on these points. The original conflicts are kept below for traceability;
-the resolution follows the table.
+**RECONCILED 2026-06-14.** All design conflicts (C1–C4) have been resolved
+and promoted into `DESIGN-BIBLE.md` (rulings 7–10). The requirements above
+reflect the ratified design.
 
-| ID | PRD proposal | Conflicts with bible | Bible's standing rule |
-|---|---|---|---|
-| **C1** | Gold funds **capped grind acceleration** (F5.1) | Terminology + premise: "**Gold buys cosmetics only, never power**" | Gold = "Dyes/vestments/skins/VFX only. Never power." (Terminology); "RUNE buys power only at Hearthlight" is "inviolable" (Ruling 1) |
-| **C2** | **Conditionally-transferable character with real cash-out via sale** (F7) | Premise/README treat characters & relics as **soulbound**; the only economic exits in canon are cosmetic — no season-sale cash-out exists | "forging **soulbound** relics"; README: soulbound, no cash-out; "a tradeable secondary market would reopen far more" |
-| **C3** | **Real item/currency loss on death**, RUNE-recoverable (F4) | Stakes are ruled **cosmetic only, no power transfer / no farmable power** | A3 PvP: "cosmetic stakes only, no power transfer"; Ruling 4: endgame grants "no farmable power" |
-| **C4** | **Real money in + real value out** as first-class (F6, F7, U5) | The bible's entire economy assumes no real-money power and no cash-out | Premise + Rulings 1–6 are built on grind-only power and cosmetic-only spend |
-
-**Resolution (ratified 2026-06-14 → `DESIGN-BIBLE.md` rulings 7–10).**
-
-- **C1 — kept bible.** Gold stays cosmetics-only; the capped grind-acceleration (F5.1) is **rejected**. PRD U3/U4 are inapplicable — there is no paid power lever.
-- **C2 — ratified.** Conditionally-transferable character; selling a season-complete character is the single value-exit; production go-live legal-gated.
-- **C3 — modified (supersedes F4's death-loss).** No item/currency loss on death. Instead a character's **collection — items + cosmetics, some rare — persists and transfers; stats reset to zero** on sale/season-restart. Power is never inherited, only re-earned. *(Open: whether power-granting relics/Sigils transfer with the collection or reset with stats.)*
-- **C4 — ratified.** Real money in (Solana settlement) + out (character sale) is canon as a designed system; production go-live legal-gated.
+| ID | PRD proposal | Resolution |
+|---|---|---|
+| **C1** | Capped grind acceleration | **Rejected.** Gold is strictly cosmetics-only (Ruling 7). |
+| **C2** | Character sale cash-out | **Ratified.** Conditionally-transferable assets (Ruling 9). |
+| **C3** | Item loss on death | **Rejected.** No loss; collection persists (Ruling 8). |
+| **C4** | Real money in/out | **Ratified.** Designed system; go-live legal-gated (Ruling 10). |
 
 Builders now follow the bible's updated rulings 7–10 on these points.
 

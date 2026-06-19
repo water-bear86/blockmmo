@@ -28,12 +28,11 @@ browser shares one world and one ledger.
 
 ## Accounts
 
-Online realms create a local browser game account with Web Crypto and bind one character
-to that account per season. No wallet is required for the prototype. Clearing browser
-storage or using another browser/device creates another pseudonymous account, so this is
-a soft prototype cap, not production-grade identity or legal compliance. Prototype ledgers
-from before this account model used display-name addresses; reset them or migrate them
-explicitly before persistent playtests.
+Online realms create a local browser game account with Web Crypto and bind one
+character to that account per season. Characters are **conditionally-transferable**
+on-chain assets: they are transfer-locked while a season is open and unlock for sale
+on completion. No wallet is required for the prototype; production character sales
+are gated by legal/compliance review.
 
 ## Controls
 
@@ -59,13 +58,12 @@ turns your swings toward the selected foe.
 Two currencies, and the line between them is the whole design:
 
 - **RUNE** — the grind currency. Drops from kills, mined into the proof-of-work chain.
-  **Power is bought only with RUNE** (leveling and soulbound relics at Hearthlight).
+  **Power is bought only with RUNE** (leveling and relics at Hearthlight).
   It is *never* for sale.
 - **Gold** — the spend currency for **cosmetics only** (skins in the Wardrobe). No power,
-  ever. Skins are **soulbound** (non-transferable), bought by **direct purchase** — no loot
-  boxes, no randomness.
+  ever. Skins are bought by **direct purchase** — no loot boxes, no randomness.
 
-Two one-way on-ramps fill Gold (there is **no cash-out**):
+Two one-way on-ramps fill Gold:
 
 1. **Grind → convert:** turn confirmed RUNE into Gold at a flat rate.
 2. **Buy with wrapped SOL:** each purchase splits **50% burned · 35% marketing ·
@@ -81,7 +79,7 @@ lives in the `ECON`, `SKINS`, and `RELICS` tables in [`game/content.js`](game/co
 > split on-chain locally, with **no real funds**. Swapping `Econ.buyGoldWithSol()` for a real
 > SPL token transfer is the seam to go live, and should not happen without proper legal/
 > compliance review first (selling cosmetics for real crypto still has tax/jurisdiction
-> implications; a tradeable secondary market would reopen far more).
+> implications; a character-sale secondary market is the single value-exit and requires legal review before go-live).
 
 ## What's in it
 
@@ -97,13 +95,13 @@ lives in the `ECON`, `SKINS`, and `RELICS` tables in [`game/content.js`](game/co
 - **Soulslike combat** — dash i-frames, stamina-gated attacks, target lock, visible
   attack arcs, safe Hearthlight start, and limited simultaneous attackers.
 - **Souls-style levelling and relics** — spend confirmed RUNE on Vigor / Endurance /
-  Strength or forge soulbound relics (power is grind-only).
+  Strength or forge relics (power is grind-only).
 - **Data-driven Act 1 story seam** — the `STORY` block now plays q01-q05:
   Hearthlight Chapel, Parish Road Receipts, Chainwell Ledger, the Mempool Yard, and
   Tallow House. Paste a richer storyline into `window.RUNECHAIN_STORY` later without
   changing the game loop.
-- **Cosmetic economy** — a Gold-funded Wardrobe of soulbound skins (no power, no loot boxes),
-  with two one-way on-ramps (RUNE→Gold, or wrapped-SOL split 50% prize / 35% burn / 15% fee).
+- **Cosmetic economy** — a Gold-funded Wardrobe of skins (no power, no loot boxes),
+  with two one-way on-ramps (RUNE→Gold, or wrapped-SOL split 50% burn / 35% marketing / 15% fee).
   Equipped skins sync over the network, so other Recorded players see what you're wearing.
 - **A real blockchain economy** — from-scratch SHA-256 proof-of-work chain (verified
   against Node's `crypto`), server-issued RUNE reward work in connected realms,

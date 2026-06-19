@@ -15,7 +15,7 @@ on-chain ledger called the **Chainwell** governs death, debt, and identity benea
 the ruined **Gracefall Parish**. Players are the **Recorded**: souls who awaken into
 administrative afterlife and must be filed correctly to exist. Monsters drop **RUNE**,
 mined by the player's browser via real SHA-256 proof-of-work; RUNE buys **power**
-(leveling Vigor/Endurance/Strength, forging soulbound relics) **only at Hearthlight**
+(leveling Vigor/Endurance/Strength, forging relics) **only at Hearthlight**
 safe-rest sites. **Gold** buys **cosmetics only**, never power. Bosses mint
 one-of-a-kind on-chain **Boss Sigils**. The three areas are three strata of one
 ledger, escalating from accepting debt, to inheriting and contesting it, to seizing
