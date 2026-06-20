@@ -21,6 +21,30 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 declare_id!("FAidaRiKduPztNQmKK1C1T4ikmmqAXpiWwMzXbnJhNN3");
 
+/// F7.3 transfer gate (rules 1 & 2), factored out so the conditional-transfer rule is
+/// unit-testable without a validator. A character may be listed for sale **only** when sales
+/// are live, its mandatory tasks are done, and the season window has closed:
+///   - paused           → sales not yet legally enabled (F6.3/F7)
+///   - !tasks_done       → can't sell a half-completed season (F7.3 rule 2)
+///   - season_open       → can't sell mid-season (F7.3 rule 1)
+/// Checks are ordered so the most fundamental gate (paused) reports first.
+pub fn ensure_listable(paused: bool, tasks_done: bool, season_open: bool) -> Result<()> {
+    require!(!paused, CharacterError::Paused);
+    require!(tasks_done, CharacterError::TasksUnfinished);
+    require!(!season_open, CharacterError::SeasonStillOpen);
+    Ok(())
+}
+
+/// F7.3 rule 3 + bible ruling 8: the on-chain half of a completed sale. The seller's account is
+/// flagged to restart at zero next season, ownership moves to the buyer, and sale-eligibility is
+/// cleared so the buyer must re-earn it (stats reset off-chain by the server — power is never
+/// inherited, only re-earned). Pure + unit-testable.
+pub fn apply_post_sale(cs: &mut CharacterState, buyer: Pubkey) {
+    cs.must_restart = true; // seller restarts next season (F7.3 rule 3)
+    cs.owner = buyer;
+    cs.tasks_done = false; // buyer inherits collection, not sale-eligibility
+}
+
 #[program]
 pub mod runechain_character {
     use super::*;
@@ -73,9 +97,11 @@ pub mod runechain_character {
     /// Seller lists a **season-complete** character. Reverts if the window is still open or
     /// tasks are unfinished (F7.3 rules 1 & 2). Moves the NFT into program escrow.
     pub fn list_for_sale(ctx: Context<ListForSale>, price: u64) -> Result<()> {
-        require!(!ctx.accounts.config.paused, CharacterError::Paused);
-        require!(ctx.accounts.character_state.tasks_done, CharacterError::TasksUnfinished);
-        require!(!ctx.accounts.season.open, CharacterError::SeasonStillOpen);
+        ensure_listable(
+            ctx.accounts.config.paused,
+            ctx.accounts.character_state.tasks_done,
+            ctx.accounts.season.open,
+        )?;
 
         let listing = &mut ctx.accounts.listing;
         listing.mint = ctx.accounts.mint.key();
@@ -139,10 +165,7 @@ pub mod runechain_character {
         )?;
 
         // seller restarts at zero next season; ownership + stats-reset marker move to buyer
-        let cs = &mut ctx.accounts.character_state;
-        cs.must_restart = true; // applies to the seller's account (server reconciles)
-        cs.owner = ctx.accounts.buyer.key();
-        cs.tasks_done = false; // buyer must re-earn; stats reset off-chain (ruling 8)
+        apply_post_sale(&mut ctx.accounts.character_state, ctx.accounts.buyer.key());
 
         emit!(CharacterSold {
             mint: mint_key,
@@ -368,4 +391,57 @@ pub enum CharacterError {
     SeasonStillOpen,
     #[msg("Season window is closed")]
     SeasonClosed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gate_allows_only_complete_closed_unpaused() {
+        // The single sale-eligible state: live sales, tasks done, season closed.
+        assert!(ensure_listable(false, true, false).is_ok());
+    }
+
+    #[test]
+    fn gate_blocks_each_failing_condition() {
+        assert!(ensure_listable(true, true, false).is_err());   // paused
+        assert!(ensure_listable(false, false, false).is_err()); // F7.3 rule 2: tasks unfinished
+        assert!(ensure_listable(false, true, true).is_err());   // F7.3 rule 1: mid-season
+    }
+
+    #[test]
+    fn gate_truth_table_is_exhaustive() {
+        // Sale-eligibility is exactly (!paused && tasks_done && !season_open) — nothing else opens it.
+        for paused in [false, true] {
+            for tasks_done in [false, true] {
+                for season_open in [false, true] {
+                    let allowed = ensure_listable(paused, tasks_done, season_open).is_ok();
+                    assert_eq!(
+                        allowed,
+                        !paused && tasks_done && !season_open,
+                        "paused={paused} tasks_done={tasks_done} season_open={season_open}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn post_sale_restarts_seller_reassigns_owner_clears_eligibility() {
+        let seller = Pubkey::new_unique();
+        let buyer = Pubkey::new_unique();
+        let mut cs = CharacterState {
+            mint: Pubkey::new_unique(),
+            owner: seller,
+            season_id: 1,
+            tasks_done: true,
+            must_restart: false,
+            bump: 1,
+        };
+        apply_post_sale(&mut cs, buyer);
+        assert_eq!(cs.owner, buyer, "ownership moves to the buyer");
+        assert!(cs.must_restart, "seller is flagged to restart at zero (F7.3 rule 3)");
+        assert!(!cs.tasks_done, "buyer must re-earn sale-eligibility; power is never inherited");
+    }
 }

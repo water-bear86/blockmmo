@@ -123,6 +123,28 @@ assert.strictEqual(seasonOne.recordCharacterSale(sellerJoin.accountId, buyerJoin
 assertRejected(seasonOne.recordCharacterSale(lateJoin.accountId, buyerJoin.accountId, { at: 2100 }), 'season_tasks_unfinished');
 ok('sale gate requires closed season and completed mandatory tasks');
 
+// Q-F7a: a character mid-task when the window closes ends 'failed' — keeps collection, cannot sell.
+// Give Late a collection + ONE of the two mandatory tasks done inside the window.
+seasonOne.recordCharacterProgress(lateJoin.accountId, {
+  stats: { vigor: 5, endurance: 4, strength: 2 },
+  collection: { cosmetics: ['azure'], relics: ['rune-lens'] },
+});
+assert.strictEqual(seasonOne.completeMandatoryTask(lateJoin.accountId, 'q01', 1400).ok, true, 'first task completes in-window');
+// While the window is open the character is mid-season, not failed.
+assert.strictEqual(seasonOne.characterStatus(lateJoin.accountId, 1500).status, 'mid-season');
+// Edge case: the window closes EXACTLY as the player goes to finish the last task — rejected.
+assertRejected(seasonOne.completeMandatoryTask(lateJoin.accountId, 'q05', 2000), 'season_closed');
+// After close with q05 still unfinished, the character is 'failed': no sale, but a re-attempt path.
+const lateStatus = seasonOne.characterStatus(lateJoin.accountId, 2100);
+assert.strictEqual(lateStatus.status, 'failed', 'closed + unfinished tasks => failed');
+assert.strictEqual(lateStatus.canSell, false, 'failed character cannot sell');
+assert.strictEqual(lateStatus.canReattempt, true, 'failed character may re-attempt next season');
+// The other end states resolve too: completer is sale-eligible, seller is sold.
+assert.strictEqual(seasonOne.characterStatus(keeperJoin.accountId, 2100).status, 'season-complete');
+assert.strictEqual(seasonOne.characterStatus(keeperJoin.accountId, 1500).status, 'mid-season', 'open window => mid-season');
+assert.strictEqual(seasonOne.characterStatus(sellerJoin.accountId, 2100).status, 'sold', 'sold character reports sold');
+ok('Q-F7a: window-closed-with-tasks-unfinished resolves to a documented "failed" status (mid-task edge included)');
+
 nowMs = 3100;
 const seasonTwo = createAccountRegistry({
   accountsFile,
@@ -154,6 +176,18 @@ assert.deepStrictEqual(buyerNext.character.collection.cosmetics, ['gilded']);
 assert.deepStrictEqual(buyerNext.character.collection.relics, ['tallow-brand']);
 assert.deepStrictEqual(buyerNext.character.collection.sigils, ['waxen-testament']);
 ok('sale/restart transfers collection and resets stats to zero');
+
+// Q-F7a: the failed character re-attempts next season — collection kept, grind stats reset to zero
+// (so failing differs from completing, which keeps both). Distinct from sale-transfer/restart-zero.
+const lateNext = join(seasonTwo, lateCredential, 'Late Reattempt');
+assert.strictEqual(lateNext.createdCharacter, true);
+assert.strictEqual(lateNext.character.carry.mode, 'reattempt', 'failed character carries as a re-attempt');
+assert.strictEqual(lateNext.character.carry.statsReset, true);
+assert.deepStrictEqual(lateNext.character.stats, { vigor: 0, endurance: 0, strength: 0 }, 'failed re-attempt resets stats');
+assert.deepStrictEqual(lateNext.character.collection.cosmetics, ['azure'], 'failed re-attempt keeps cosmetics');
+assert.deepStrictEqual(lateNext.character.collection.relics, ['rune-lens'], 'failed re-attempt keeps relics');
+assert.strictEqual(seasonTwo.characterStatus(lateNext.accountId, 3500).status, 'mid-season', 're-attempt starts a fresh open season');
+ok('Q-F7a: failed character re-attempts next season (collection kept, stats reset)');
 
 persisted = JSON.parse(fs.readFileSync(accountsFile, 'utf8'));
 assert(persisted.seasons['season-one'] && persisted.seasons['season-two'], 'both seasons should persist');

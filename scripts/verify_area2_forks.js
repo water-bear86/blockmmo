@@ -276,21 +276,44 @@ ok('q06 Keeper-of-Margins made optional (lectern-only, next q07 intact)');
   } finally { Math.random = orig; }
 }
 
-// ============ 7. NO REGRESSION: single-HP foe (Area1 Tallow, PvP-shape) unchanged ============
+// ============ 7. NO REGRESSION: single-HP foe (Area1 Gate Sexton, PvP-shape) unchanged ============
 {
   // A plain single-HP encounter must expose the classic ACTIONS and win on one pool.
-  const enc = content.TURN_TALLOW; // {opponent:{hp:260...}} no dualChain/phase2
+  // (Mother Tallow now carries a phase2 smoke split — see verify_act1_questline — so the
+  //  single-HP back-compat case uses Gate Sexton Marrow, another Area-1 foe with no phase2.)
+  const enc = content.TURN_SEXTON; // {opponent:{hp:96...}} no dualChain/phase2
   const m = createTurnBasedMode(enc); const api = makeApi({ meleeDamage: 50 });
   const orig = Math.random; Math.random = NO_RND;
   try {
     m.enter(ctx, api);
     let guard = 0; while (m.getState().phase === 'intro' && guard++ < 40) m.update(0.05, {});
     assert(!m.getState().foe.dc && !m.getState().foe.phase2, 'single-HP foe has no dc/phase2');
-    assert(m.getState().foe.hp === 260 && m.getState().foe.maxHp === 260, 'single-HP foe.hp from opponent.hp (no fallback to 60)');
+    assert(m.getState().foe.hp === 96 && m.getState().foe.maxHp === 96, 'single-HP foe.hp from opponent.hp (no fallback to 60)');
     guard = 0;
     while (m.getState().phase !== 'win' && m.getState().phase !== 'lose' && guard++ < 500) selectAction(m, 'strike');
     assert(m.getState().phase === 'win', 'single-HP foe defeated via classic Strike path');
     ok('NO REGRESSION: single-HP foe uses classic ACTIONS + single-pool win');
+  } finally { Math.random = orig; }
+}
+
+// ============ 7b. Mother Tallow phase2: single-HP Phase 1 -> smoke split at 50% ============
+{
+  const T = content.TURN_TALLOW;
+  assert(T.opponent.phase2 && T.opponent.phase2.threshold === 0.5 && T.opponent.phase2.mergePerTurn > 0,
+    'Mother Tallow opponent.phase2 smoke split at 50% with merge regen');
+  const m = createTurnBasedMode(T); const api = makeApi({ meleeDamage: 60 });
+  const orig = Math.random; Math.random = NO_RND;
+  try {
+    m.enter(ctx, api);
+    let guard = 0; while (m.getState().phase === 'intro' && guard++ < 40) m.update(0.05, {});
+    assert(!m.getState().foe.dc, 'Mother Tallow starts single-HP (no dc yet)');
+    // Strike (single-HP menu) until the smoke split fires at the 50% threshold.
+    guard = 0;
+    while (!m.getState().foe.dc && m.getState().phase !== 'win' && guard++ < 200) selectAction(m, 'strike');
+    const dc = m.getState().foe.dc;
+    assert(dc, 'Mother Tallow split into dual-chain at 50% threshold');
+    assert(dc.a.label === 'WAXEN' && dc.b.label === 'SMOKE', 'Tallow split exposes WAXEN body + SMOKE echo halves');
+    ok('Mother Tallow: single-HP Phase 1 splits into WAXEN/SMOKE dual-chain at 50%');
   } finally { Math.random = orig; }
 }
 

@@ -103,6 +103,13 @@
   .statbtn .cost{color:var(--gold)}
   button:hover:not(:disabled){border-color:var(--gold);background:#222820}
   button:disabled{opacity:.42;cursor:default}
+  button:focus-visible, input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  @keyframes low-hp-pulse{
+    0%{filter:brightness(1)}
+    50%{filter:brightness(1.4)}
+    100%{filter:brightness(1)}
+  }
+  .low-hp{animation:low-hp-pulse .8s infinite}
   .itemlist{margin-top:13px;border-top:1px solid #34302a;padding-top:10px}
   .itemrow{display:grid;grid-template-columns:auto 1fr auto;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid #272b2f}
   .itemicon{width:32px;height:32px;image-rendering:pixelated;image-rendering:crisp-edges;background:#08090a;border:1px solid #34302a;padding:4px}
@@ -132,14 +139,14 @@
 
 <div id="vitals" class="hud">
   <div class="lab"><span id="charname">Recorded</span> - Level <b id="lvl">1</b></div>
-  <div id="hp" class="bar"><i></i></div>
+  <div id="hp" class="bar" role="progressbar" aria-valuemin="0" aria-valuenow="120" aria-valuemax="120" aria-label="Health"><i></i></div>
   <div class="lab">Stamina</div>
-  <div id="sta" class="bar"><i></i></div>
+  <div id="sta" class="bar" role="progressbar" aria-valuemin="0" aria-valuenow="100" aria-valuemax="100" aria-label="Stamina"><i></i></div>
   <div class="statline">VGR <b id="sVgr">10</b> / END <b id="sEnd">10</b> / STR <b id="sStr">10</b> / DMG <b id="sDmg">34</b></div>
   <div id="runes" class="statline"></div>
 </div>
 
-<div id="quest" class="hud">
+<div id="quest" class="hud" aria-live="polite">
   <div class="qk">Current thread</div>
   <div id="qtitle" class="qt">Chainwell Ambush</div>
   <div id="qobj" class="qo">Enter the realm to wake the chain.</div>
@@ -165,7 +172,7 @@
 </div>
 
 <div id="prompt" class="hud"></div>
-<div id="log" class="hud"></div>
+<div id="log" class="hud" aria-live="polite"></div>
 <div id="bossbar" class="hud">
   <span id="bossname">Boss</span>
   <div class="bar"><i id="bossfill"></i></div>
@@ -204,8 +211,8 @@
   </div>
 </div>
 
-<div id="death">
-  <h1>YOU DIED</h1>
+<div id="death" role="alert" aria-labelledby="death-title">
+  <h1 id="death-title">YOU DIED</h1>
   <button id="respawn">Return to Hearthlight</button>
 </div>
 
@@ -217,7 +224,7 @@
     <b>WASD</b> move / <b>Mouse</b> aim / <b>Click</b>, <b>Space</b>, or <b>L</b> attack / <b>Shift</b> dash /
     <b>Q</b> target nearest / <b>E</b> interact / <b>G</b> Hearthlight / <b>B</b> wardrobe / <b>M</b> wallet
   </div>
-  <input id="name" maxlength="14" placeholder="name the Recorded" />
+  <input id="name" maxlength="14" placeholder="name the Recorded" aria-label="Name the Recorded" />
   <button id="go">Enter Gracefall</button>
   <div class="mini">This opens safe. One weak Hollow waits outside Hearthlight. The road, graveyard, and boss gates unlock as the ledger records you.</div>
 </div>
@@ -237,7 +244,7 @@
 const Content = window.RUNECHAIN_CONTENT;
 if (!Content || !window.RUNECHAIN_SHA256 || !window.RUNECHAIN_CHAIN || !window.RUNECHAIN_ACCOUNT) throw new Error('RUNECHAIN core scripts failed to load');
 const {
-  ECON, STORY, RELICS, SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL,
+  ECON, STORY, RELICS, SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES,
   PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
   TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
   PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,
@@ -442,7 +449,7 @@ function sigilBonuses(){
 }
 function sigilSig(){ return Chain.greatRunesOf(valueAddress()).map(g=>g.key||('b'+(g.buff||0))).join(','); }
 function skinPal(id){ return SKINS.find(s=>s.id===id)||SKINS[0]; }
-function ownedSkin(id){ return id==='tarnished' || Chain.cosmeticsOf(valueAddress()).includes(id); }
+function ownedSkin(id){ return id==='tarnished' || (progress.cosmetics&&progress.cosmetics.has(id)) || Chain.cosmeticsOf(valueAddress()).includes(id); }
 function ownedItem(id){ return Chain.itemsOf(valueAddress()).includes(id); }
 function itemBonuses(){
   const out={hp:0,sta:0,dmg:0,runeMult:0};
@@ -491,7 +498,7 @@ let player={
   skinId:'tarnished', pal:skinPal('tarnished')
 };
 const enemies=[], particles=[], projectiles=[], remotes={};
-const progress={hollows:0, forged:false, interactions:new Set()};
+const progress={hollows:0, forged:false, interactions:new Set(), lore:new Set(), cosmetics:new Set(), puzzles:new Set()};
 
 function recalcStats(fullHeal){
   const b=itemBonuses();
@@ -1040,7 +1047,9 @@ function refreshWardrobe(){
   const spend=Econ.goldSpendable(valueAddress()), list=document.getElementById('wlist');
   list.innerHTML='';
   for(const s of SKINS){
-    const own=ownedSkin(s.id), eq=player.skinId===s.id;
+    const own=ownedSkin(s.id);
+    if(s.secret&&!own)continue; // exploration-only cosmetic: hidden from the shop until earned
+    const eq=player.skinId===s.id;
     const row=document.createElement('div'); row.className='skin'+(eq?' equipped':'');
     row.innerHTML='<span class="sw" style="background:'+s.body+';box-shadow:inset 0 0 0 5px '+s.trim+'"></span><span class="sn">'+esc(s.name)+'</span><button class="skinbtn">'+(eq?'Equipped':own?'Equip':s.price+' G')+'</button>';
     const btn=row.querySelector('button');
@@ -1381,6 +1390,8 @@ function drawDecor(){
   for(const c of CANDLES)drawCandle(c);
   drawNpcs();
   drawInteractables();
+  drawLore();
+  drawPuzzles();
   const g=worldToScreen(GRACE.x,GRACE.y);
   ctx.globalAlpha=.14; ctx.fillStyle='#f1c75b'; ctx.beginPath(); ctx.arc(g.x,g.y,SAFE_RADIUS*1.25,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
   ctx.strokeStyle='rgba(241,199,91,.55)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(g.x,g.y,SAFE_RADIUS,0,Math.PI*2); ctx.stroke();
@@ -1484,11 +1495,17 @@ const RUINS=[
   {x:198,y:46,w:62,h:13,c:'#44494b'},
   {x:338,y:-104,w:52,h:30,c:'#3b3e42',arch:true},
   {x:574,y:74,w:76,h:14,c:'#46494c'},
-  {x:742,y:-42,w:50,h:34,c:'#4f4a3d',arch:true}
+  {x:742,y:-42,w:50,h:34,c:'#4f4a3d',arch:true},
+  {x:-600,y:-300,w:66,h:36,c:'#3a3733',arch:true} // collapsed Unrecorded Vault (hidden NW dead-end)
 ];
 const TREES=[
   {x:-248,y:-126},{x:-172,y:104,dead:true},{x:-42,y:128},{x:146,y:-142},
-  {x:286,y:122},{x:404,y:-132,dead:true},{x:538,y:142,dead:true},{x:706,y:-126,dead:true},{x:826,y:106,dead:true}
+  {x:286,y:122},{x:404,y:-132,dead:true},{x:538,y:142,dead:true},{x:706,y:-126,dead:true},{x:826,y:106,dead:true},
+  // off-path thickets marking the lore dead-ends (north cairn, south marsh, west track, hidden vault)
+  {x:212,y:-352,dead:true},{x:284,y:-300,dead:true},
+  {x:556,y:352,dead:true},{x:486,y:300,dead:true},
+  {x:-356,y:158,dead:true},
+  {x:-560,y:-256,dead:true},{x:-652,y:-262,dead:true},{x:-616,y:-352,dead:true},{x:-540,y:-336,dead:true}
 ];
 const GRAVES=[
   {x:188,y:-118,candle:true},{x:214,y:-132},{x:240,y:-112,candle:true},{x:266,y:-138},
@@ -1498,7 +1515,9 @@ const CANDLES=[
   {x:-36,y:-48},{x:38,y:48},{x:126,y:32},{x:260,y:28},{x:420,y:-18},{x:560,y:22},{x:780,y:-24}
 ];
 const BRAMBLES=[
-  {x:442,y:-118,w:74,h:34,n:12},{x:500,y:94,w:82,h:42,n:14},{x:674,y:-96,w:96,h:46,n:18},{x:832,y:68,w:86,h:38,n:16}
+  {x:442,y:-118,w:74,h:34,n:12},{x:500,y:94,w:82,h:42,n:14},{x:674,y:-96,w:96,h:46,n:18},{x:832,y:68,w:86,h:38,n:16},
+  // bramble wall ringing the Unrecorded Vault into a concealed alcove (open only from the north)
+  {x:-600,y:-250,w:150,h:30,n:24},{x:-678,y:-300,w:34,h:96,n:18},{x:-522,y:-300,w:34,h:96,n:18}
 ];
 const FENCES=[
   {x:-178,y:58,len:82,dir:'h'},{x:-216,y:98,len:76,dir:'v'},{x:120,y:92,len:92,dir:'h'},{x:158,y:130,len:54,dir:'v'}
@@ -1559,21 +1578,131 @@ function nearestNpc(){
 function doInteract(){
   if(!state.started||player.dead||state.graceOpen||state.wardrobeOpen||Dialogue.isOpen())return;
   const i=nearestInteractable();
-  if(!i)return;
-  if(!i.repeat)progress.interactions.add(interactionKey(i));
-  if(!i.townBeat)Story.event('interact',{target:i.target,id:i.id});
-  log('<b style="color:#f1c75b">Ledger marked:</b> '+esc(i.label));
-  const beat=i.townBeat&&ACT1_GRACEFALL&&ACT1_GRACEFALL.townBeats&&ACT1_GRACEFALL.townBeats.find(b=>b.id===i.townBeat);
-  const lines=beat?beat.lines:(ACT1_GRACEFALL&&ACT1_GRACEFALL.interactions&&ACT1_GRACEFALL.interactions[i.target]);
-  sayAct1(lines);
   if(i){
-    progress.interactions.add(interactionKey(i));
-    Story.event('interact',{target:i.target,id:i.id});
+    if(!i.repeat)progress.interactions.add(interactionKey(i));
+    if(!i.townBeat)Story.event('interact',{target:i.target,id:i.id});
     log('<b style="color:#f1c75b">Ledger marked:</b> '+esc(i.label));
+    const beat=i.townBeat&&ACT1_GRACEFALL&&ACT1_GRACEFALL.townBeats&&ACT1_GRACEFALL.townBeats.find(b=>b.id===i.townBeat);
+    const lines=beat?beat.lines:(ACT1_GRACEFALL&&ACT1_GRACEFALL.interactions&&ACT1_GRACEFALL.interactions[i.target]);
+    sayAct1(lines);
     return;
   }
+  const lore=nearestLore();
+  if(lore){ discoverLore(lore); return; }
+  const pz=nearestPuzzleTarget();
+  if(pz){ if(pz.clue) readPuzzleClue(pz.puzzle); else stampPuzzle(pz.puzzle,pz.node); return; }
   const n=nearestNpc();
   if(n)Dialogue.open(n);
+}
+/* ---- Off-path lore / Codex (issue #25): rewarded curiosity, never power ---- */
+const LORE=(AREA1_LORE||[]);
+function nearestLore(){
+  let best=null, bestD=999;
+  for(const node of LORE){
+    if(progress.lore.has(node.id))continue;
+    const d=Math.hypot(player.x-node.x,player.y-node.y);
+    if(d<bestD){ best=node; bestD=d; }
+  }
+  return bestD<34?best:null;
+}
+function loreCount(){ return {found:progress.lore.size, total:LORE.length}; }
+function discoverLore(node){
+  if(progress.lore.has(node.id))return;
+  progress.lore.add(node.id);
+  const c=loreCount();
+  log('<b style="color:#bca0e6">Lore recorded:</b> '+esc(node.title)+' <span style="color:#7d776b">('+c.found+'/'+c.total+')</span>');
+  (node.lines||[]).forEach(t=>log('<span style="color:#cbb7ea">“'+esc(t)+'”</span>'));
+  // Exploration cosmetic: grant the secret skin the first time its node is found. This is a
+  // client-side unlock (like the lore set), not a Gold purchase — exploration rewards are never
+  // economic and never power, so they don't route through the on-chain spend ledger.
+  if(node.reward && !ownedSkin(node.reward)){
+    progress.cosmetics.add(node.reward);
+    const sk=SKINS.find(s=>s.id===node.reward);
+    if(sk)log('<b style="color:#f1c75b">Cosmetic unlocked:</b> '+esc(sk.name)+' — equip it in the wardrobe (B).');
+    if(state.wardrobeOpen)refreshWardrobe();
+  }
+  lootFlash('<b>'+esc(node.title)+'</b><br><span style="font-size:13px;color:#cbb7ea">Lore recorded '+c.found+'/'+c.total+(node.reward?' · cosmetic unlocked':'')+'</span>');
+  updateHud();
+}
+function drawLore(){
+  for(const node of LORE){
+    const s=worldToScreen(node.x,node.y), found=progress.lore.has(node.id);
+    const near=!found && nearestLore()===node;
+    // A weathered marker-stone with a faint violet rune that brightens when undiscovered.
+    rect(s.x-7,s.y-6,14,10,found?'#3d3a44':'#4a4658');
+    rect(s.x-5,s.y-14,10,9,found?'#4a4654':'#5b566c');
+    const glow=found?'#5a5466':(near?'#d9c2ff':'#9b86c4');
+    rect(s.x-3,s.y-12,6,5,glow);
+    if(near){
+      ctx.font='7px ui-monospace,monospace'; ctx.textAlign='center'; ctx.fillStyle='#d9c2ff';
+      ctx.fillText('E',s.x,s.y-20);
+    }
+  }
+  ctx.textAlign='left';
+}
+/* ---- Ledger puzzles / Q-N3 (issue #26): read the clue, deduce the order ----
+   The engine NEVER reveals the solution order. A node only advances the puzzle if it is the
+   next id in puzzle.order; a wrong stamp blanks that puzzle's progress. Solving reveals lore. */
+const PUZZLES=(AREA1_PUZZLES||[]);
+const puzzleProgress={}; // id -> count of correct stamps so far this attempt
+function puzzleStep(p){ return puzzleProgress[p.id]||0; }
+function puzzleSolved(p){ return progress.puzzles.has(p.id); }
+// Nearest interactable puzzle target (a clue board or a stone) within reach, on unsolved puzzles.
+function nearestPuzzleTarget(){
+  let best=null, bestD=30;
+  for(const p of PUZZLES){
+    if(puzzleSolved(p))continue;
+    if(p.clue){ const d=Math.hypot(player.x-p.clue.x,player.y-p.clue.y); if(d<bestD){ best={puzzle:p,clue:p.clue}; bestD=d; } }
+    for(const node of p.nodes){ const d=Math.hypot(player.x-node.x,player.y-node.y); if(d<bestD){ best={puzzle:p,node}; bestD=d; } }
+  }
+  return best;
+}
+function readPuzzleClue(p){
+  log('<b style="color:#7fc7d9">'+esc(p.title)+':</b>');
+  (p.clue.lines||[]).forEach(t=>log('<span style="color:#bfe0ea">“'+esc(t)+'”</span>'));
+}
+function stampPuzzle(p,node){
+  if(puzzleSolved(p))return;
+  const idx=puzzleStep(p), expected=p.order[idx];
+  log('<span style="color:#9fb0b8">'+esc(node.inscription||node.label)+'</span>');
+  if(node.id===expected){
+    puzzleProgress[p.id]=idx+1;
+    if(puzzleProgress[p.id]>=p.order.length){
+      progress.puzzles.add(p.id);
+      log('<b style="color:#f1c75b">'+esc(p.title)+' — solved.</b>');
+      (p.solvedLore||[]).forEach(t=>log('<span style="color:#e6d9b0">'+esc(t)+'</span>'));
+      lootFlash('<b>'+esc(p.title)+'</b><br><span style="font-size:13px;color:#cbb7ea">Ledger reconciled</span>');
+    }else{
+      log('<span style="color:#8fd6a0">'+esc(p.stamp||'Stamped.')+' ('+puzzleProgress[p.id]+'/'+p.order.length+')</span>');
+    }
+  }else{
+    puzzleProgress[p.id]=0;
+    log('<b style="color:#d98a6a">'+esc(p.wrong||'Wrong. The ledger resets.')+'</b>');
+  }
+}
+function drawPuzzles(){
+  const tgt=(state.mode==='town'&&!Dialogue.isOpen())?nearestPuzzleTarget():null;
+  for(const p of PUZZLES){
+    const solved=puzzleSolved(p), step=puzzleStep(p);
+    // clue board: a planted slate
+    const cs=worldToScreen(p.clue.x,p.clue.y);
+    rect(cs.x-9,cs.y-3,3,12,'#5a4a36'); rect(cs.x+6,cs.y-3,3,12,'#5a4a36');
+    rect(cs.x-12,cs.y-16,24,15,solved?'#3a3d3a':'#48504c');
+    rect(cs.x-10,cs.y-14,20,3,'#caa64a'); rect(cs.x-10,cs.y-9,16,2,'#8a9088'); rect(cs.x-10,cs.y-6,12,2,'#8a9088');
+    if(tgt&&tgt.clue&&tgt.puzzle===p){ ctx.font='7px ui-monospace,monospace'; ctx.textAlign='center'; ctx.fillStyle='#bfe0ea'; ctx.fillText('E',cs.x,cs.y-20); }
+    // stones: lit gold for ones already correctly stamped this attempt; green when solved.
+    p.nodes.forEach((node,ni)=>{
+      const s=worldToScreen(node.x,node.y);
+      const orderIdx=p.order.indexOf(node.id);
+      const done=solved||(orderIdx>-1&&orderIdx<step);
+      rect(s.x-9,s.y-7,18,13,done?'#2f4a39':'#544f45');
+      rect(s.x-7,s.y-9,14,4,done?'#7fd6a0':(solved?'#5a6b60':'#caa64a'));
+      ctx.font='bold 8px ui-monospace,monospace'; ctx.textAlign='center'; ctx.fillStyle=done?'#bfeccb':'#e7dcc2';
+      ctx.fillText(node.label,s.x,s.y+3);
+      if(tgt&&tgt.node===node){ ctx.fillStyle='#f1c75b'; ctx.fillText('E',s.x,s.y-12); }
+    });
+  }
+  ctx.textAlign='left';
 }
 function drawInteractables(){
   for(const i of INTERACTABLES){
@@ -1798,6 +1927,7 @@ function draw(){
 
 /* ------------------------------- HUD ------------------------------------ */
 const hpFill=document.querySelector('#hp>i'), staFill=document.querySelector('#sta>i');
+const hpEl=document.getElementById('hp'), staEl=document.getElementById('sta');
 function log(html){
   const l=document.getElementById('log'), d=document.createElement('div');
   d.innerHTML=html; l.appendChild(d);
@@ -1805,8 +1935,14 @@ function log(html){
   setTimeout(()=>{ if(d.parentNode)d.remove(); },5200);
 }
 function updateHud(){
-  hpFill.style.width=(player.hp/player.maxHp*100)+'%';
-  staFill.style.width=(player.sta/player.maxSta*100)+'%';
+  const hpPct=player.hp/player.maxHp, staPct=player.sta/player.maxSta;
+  hpFill.style.width=(hpPct*100)+'%';
+  staFill.style.width=(staPct*100)+'%';
+  hpEl.setAttribute('aria-valuenow', Math.round(player.hp));
+  hpEl.setAttribute('aria-valuemax', Math.round(player.maxHp));
+  staEl.setAttribute('aria-valuenow', Math.round(player.sta));
+  staEl.setAttribute('aria-valuemax', Math.round(player.maxSta));
+  hpEl.classList.toggle('low-hp', hpPct < 0.25);
   document.getElementById('lvl').textContent=player.level;
   document.getElementById('sVgr').textContent=player.vigor;
   document.getElementById('sEnd').textContent=player.endurance;
@@ -1821,9 +1957,13 @@ function updateHud(){
   else{
   const bossEnc=state.mode==='town'?nearestBossEncounter():null;
   const near=nearestInteractable();
+  const lore=state.mode==='town'?nearestLore():null;
+  const pz=state.mode==='town'?nearestPuzzleTarget():null;
   const npc=state.mode==='town'?nearestNpc():null;
   if(bossEnc){ prompt.style.display='block'; prompt.innerHTML='Press <b>F</b> to face <b>'+esc(bossEnc.type.name)+'</b>'; }
   else if(near){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> - '+esc(near.label); }
+  else if(lore){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to examine <b>'+esc(lore.title)+'</b>'; }
+  else if(pz){ prompt.style.display='block'; prompt.innerHTML=pz.clue?('Press <b>E</b> to read the <b>'+esc(pz.clue.label)+'</b>'):('Press <b>E</b> to stamp <b>'+esc(pz.node.label)+'</b>'); }
   else if(npc){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to speak with <b>'+esc(npc.name)+'</b>'; }
   else if(nearGrace()&&!state.graceOpen&&!player.dead){ prompt.style.display='block'; prompt.innerHTML='Safe Hearthlight - press <b>G</b> to rest, level, forge'; }
   else if(player.lock&&!player.lock.dead){ prompt.style.display='block'; prompt.innerHTML='Target: <b>'+esc(player.lock.type.name)+'</b>'; }
