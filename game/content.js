@@ -190,9 +190,9 @@ const STORY = root.RUNECHAIN_STORY || {
     title:'The Auditor',
     onStart:['The humanoid silhouette of scrolling text faces you. It cannot be killed. Only answered.'],
     steps:[
-      {id:'auditor', text:'Stand your ground against the Auditor and make your choice.', done:{event:'kill', monster:'auditor', count:1}}
+      {id:'auditor', text:'Stand before the Auditor and make your choice — there is no killing it.', done:{event:'ending', any:true}}
     ],
-    onComplete:['The ledger rotates one final time. Your amendment stands. You are the Second Scribe.'],
+    onComplete:['The ledger rotates one final time and settles. Your choice is recorded, and permanent.'],
     rewards:{rune:200}
   }]
 };
@@ -234,6 +234,32 @@ const BOSS_SIGILS = {
   ledgerbound: 'contested-will',
   auditor: 'amended-record',
 };
+
+/* ---- Area 3 finale — the Auditor's three endings (issue #24/#5) ----------- */
+/* The Auditor cannot be killed; the climax is a CHOICE of three permanent, account-bound
+   endings (A/B/C), not combat. Per the ratified scope ruling the ending is FLAG-BASED and the
+   ledger is PRESERVED — no on-chain RUNE wipe or relic destruction (on-chain recordEnding +
+   server relay are deferred). Choice C ('amend') is the ONLY path to the Amended Record sigil
+   and the only one that unlocks the endgame. The index.html host consumes this via
+   openAuditorChoice()/resolveAuditorChoice() and records progress.ending. */
+const AUDITOR_ENDINGS = [
+  { id:'A', key:'comply', title:'Ending A — Reconciled', label:'Sign the ledger as the Auditor wrote it',
+    lines:[
+      'You countersign the Auditor\'s version. The discrepancy is closed; the parish is recorded solvent, and you compliant.',
+      'Codex: "The discrepancy was you. It has been reconciled. You are, at last, in good standing — and nothing else."'
+    ] },
+  { id:'B', key:'refuse', title:'Ending B — Redacted', label:'Strike your own name from the registry',
+    lines:[
+      'You redact your entry entirely. The Auditor cannot audit what was never recorded; the column where you stood goes blank.',
+      'Codex: "Unrecorded. You owe nothing because you are nothing the ledger can hold. Free, and alone with it."'
+    ] },
+  { id:'C', key:'amend', title:'Ending C — Amended', sigil:'amended-record', endgame:true, label:'Take the second quill and co-author the record',
+    lines:[
+      'You take the other quill. The record is rewritten by two hands, neither sovereign — the Auditor\'s and yours.',
+      'Codex: "The Amended Record stands: co-authored, contestable, alive. You are the Second Scribe."',
+      'AMENDED RECORD SIGIL sealed. The Amendment endgame opens.'
+    ] }
+];
 
 const ACT1_GRACEFALL = {
   id:'gracefall-parish',
@@ -648,10 +674,11 @@ const AREA3_ENCOUNTERS={
     {mode:'battlefield',name:'The Seized Asset Yard',payload:BATTLE_SEIZED_YARD,beatText:'Your relics walk as husks.',complete:{event:'cleared'}},
     {mode:'turnbased',name:'Contest three decrees',payload:TURN_CASCADE,beatText:'You cannot damage it — contest its logic.',complete:{event:'duel'}}
   ]},
+  // The Auditor cannot be fought: the ascent + rift lead to the choice, which the host presents
+  // on encounter completion (openAuditorChoice). No turn-based duel — the climax is co-authorship.
   auditor:{id:'the-auditor',name:'The Auditor',beat:0.9,segments:[
     {mode:'platformer',name:'The Testimony Ascent',payload:PLAT_ASCENT_TESTIMONY,beatText:'Paradox waves invert your controls.',complete:{event:'boss'}},
-    {mode:'battlefield',name:'The Temporal Rift',payload:BATTLE_SEIZED_YARD,beatText:'Past versions of every enemy spawn.',complete:{event:'cleared'}},
-    {mode:'turnbased',name:'Make your choice',payload:TURN_AUDITOR,beatText:'The Auditor rotates one final time. Answer it.',complete:{event:'duel'}}
+    {mode:'battlefield',name:'The Temporal Rift',payload:BATTLE_SEIZED_YARD,beatText:'Past versions of every enemy spawn. Beyond them, the Auditor waits to be answered.',complete:{event:'cleared'}}
   ]}
 };
 /* ---- NPCs — branching dialogue (issue #22, lore/dialogue lane) ----------- */
@@ -796,7 +823,7 @@ const NPCS=[
 ];
 
   return {
-    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, BOSS_SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES,
+    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, BOSS_SIGILS, AUDITOR_ENDINGS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES,
     PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
     TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
     AREA2_TOWN, PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,
