@@ -14,7 +14,16 @@
   }
 
   function serializeBlockForHash(b) {
-    return b.index + '|' + b.prev + '|' + b.time + '|' + JSON.stringify(b.txs) + '|' + b.nonce;
+    // Optimization: Cache the prefix part of the block string (everything except the nonce)
+    // to avoid expensive JSON.stringify calls during PoW mining loops.
+    if (b._hashPrefix === undefined || b._lastIndex !== b.index || b._lastPrev !== b.prev || b._lastTime !== b.time || b._lastTxs !== b.txs) {
+      b._hashPrefix = b.index + '|' + b.prev + '|' + b.time + '|' + JSON.stringify(b.txs) + '|';
+      b._lastIndex = b.index;
+      b._lastPrev = b.prev;
+      b._lastTime = b.time;
+      b._lastTxs = b.txs;
+    }
+    return b._hashPrefix + b.nonce;
   }
 
   function hashBlock(b, sha256) {

@@ -22,7 +22,7 @@ const {
   validateBlockCandidate,
   validateChain,
 } = require('./game/chain.js');
-const { ENEMY_REWARDS, STORY, RELICS, LEVELING } = require('./game/content.js');
+const { ENEMY_REWARDS, STORY, RELICS, LEVELING, BOSS_SIGILS } = require('./game/content.js');
 
 const DEFAULT_PORT = process.env.PORT || 8080;
 const DEFAULT_SEASON_ID = 'preseason-1';
@@ -328,13 +328,26 @@ function createRealmServer(options = {}) {
       send(client, { t: 'mine:error', error: reward.error });
       return reward;
     }
+    // Deduplicate boss sigils — a boss sigil can only be minted once per character.
+    if (reward.sigilId && ownsSigil(client.character.address, reward.sigilId)) {
+      const result = blockError('sigil_owned', 'That boss sigil is already recorded on the Chainwell.');
+      send(client, { t: 'mine:error', error: result.error });
+      return result;
+    }
     return issueMiningCandidate(client, (candidateId) => ({
       to: client.character.address,
       amt: reward.amt,
       note: reward.note,
       cur: 'RUNE',
       id: candidateId,
-      auth: {
+      auth: reward.sigilId ? {
+        type: 'server-boss-reward',
+        source: reward.sourceKey,
+        sigilId: reward.sigilId,
+        accountId: client.accountId,
+        characterId: client.character.id,
+        seasonId,
+      } : {
         type: 'server-reward',
         source: reward.sourceKey,
         accountId: client.accountId,
@@ -490,6 +503,19 @@ function createRealmServer(options = {}) {
     return false;
   }
 
+  function ownsSigil(address, sigilId) {
+    for (const block of masterChain) {
+      for (const tx of block.txs || []) {
+        const auth = tx.auth;
+        if (tx.to === address && auth && auth.type === 'server-boss-reward' &&
+            auth.sigilId === sigilId) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   function acceptMinedWork(client, candidateId, block) {
     cleanupMiningCandidates();
     const candidate = pendingMining.get(candidateId);
@@ -559,6 +585,23 @@ function createRealmServer(options = {}) {
         amt: enemy.rune,
         note: enemy.name + ' slain',
         sourceKey: 'enemy:' + source.key,
+      };
+    }
+    if (source.type === 'boss') {
+      const enemy = ENEMY_REWARDS[source.key];
+      if (!enemy) return blockError('invalid_reward_source', 'Unknown boss reward source.');
+      const sigilId = BOSS_SIGILS[source.key];
+      if (!sigilId) return blockError('invalid_reward_source', 'Boss has no sigil defined.');
+      // amended-record (The Auditor) requires Choice C path.
+      if (sigilId === 'amended-record' && !source.choiceC) {
+        return blockError('invalid_reward_source', 'The Amended Record requires the Choice C ending path.');
+      }
+      return {
+        ok: true,
+        amt: enemy.rune,
+        note: enemy.name + ' defeated — ' + sigilId,
+        sourceKey: 'boss:' + source.key,
+        sigilId,
       };
     }
     if (source.type === 'story') {
@@ -730,6 +773,7 @@ function createRealmServer(options = {}) {
     handleParsedMessage,
     acceptBlock,
     getChain,
+    getAccountRegistry: () => accountRegistry,
     listen,
     close,
   };
@@ -983,6 +1027,9 @@ function createAccountRegistry(options = {}) {
       if (!found) continue;
       if (auth.type === 'server-spend' && auth.effect) {
         applySpendEffect(found.character, auth.effect);
+        changed = true;
+      } else if (auth.type === 'server-boss-reward' && auth.sigilId) {
+        applySpendEffect(found.character, { kind: 'sigil', sigilId: auth.sigilId });
         changed = true;
       }
     }

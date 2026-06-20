@@ -227,6 +227,13 @@ const SIGILS = {
   'contested-will':  { name:'The Contested Will', runeMult:0.10, atkSpeed:0.12, iframeOnHit:true, note:'Severed from inheritance' },
   'amended-record':  { name:'The Amended Record', runeMult:0.15, endgame:true, note:'Co-authored' }
 };
+/* Boss Sigils — mapping from final-boss enemy key to the sigil it drops on kill.
+   amended-record is Choice C only: the server enforces choiceC:true on the source. */
+const BOSS_SIGILS = {
+  tallow: 'waxen-testament',
+  ledgerbound: 'contested-will',
+  auditor: 'amended-record',
+};
 
 const ACT1_GRACEFALL = {
   id:'gracefall-parish',
@@ -698,7 +705,7 @@ const NPCS=[
 ];
 
   return {
-    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL,
+    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, BOSS_SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL,
     PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
     TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
     AREA2_TOWN, PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,

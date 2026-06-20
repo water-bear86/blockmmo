@@ -11,6 +11,7 @@ const SOURCE_DIR = path.join(ROOT, 'assets', 'source');
 const manifest = readJson(path.join(PIXEL_DIR, 'manifest.json'));
 const sourceManifest = readJson(path.join(SOURCE_DIR, 'manifest.json'));
 const index = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+const content = fs.readFileSync(path.join(ROOT, 'game', 'content.js'), 'utf8');
 const platformer = fs.readFileSync(path.join(ROOT, 'engine', 'platformer.js'), 'utf8');
 const battlefield = fs.readFileSync(path.join(ROOT, 'engine', 'battlefield.js'), 'utf8');
 
@@ -55,8 +56,11 @@ for (const [key, file, frameW, frameH, frames] of runtimeAssets) {
   assert((meta.frames || []).length === frames, `${key} frame count mismatch`);
   const img = decodePng(path.join(PIXEL_DIR, file));
   assert(img.width === frameW * frames && img.height === frameH, `${file} dimensions mismatch`);
-  assert(index.includes(`'${key}':{src:'assets/pixel/${file}',w:${frameW},h:${frameH},img:null}`) ||
-    index.includes(`${key}:{src:'assets/pixel/${file}',w:${frameW},h:${frameH},img:null}`),
+  assert(
+    index.includes(`'${key}':{src:'assets/pixel/${file}',w:${frameW},h:${frameH},img:null}`) ||
+    index.includes(`${key}:{src:'assets/pixel/${file}',w:${frameW},h:${frameH},img:null}`) ||
+    content.includes(`'${key}':{src:'assets/pixel/${file}',w:${frameW},h:${frameH},img:null}`) ||
+    content.includes(`${key}:{src:'assets/pixel/${file}',w:${frameW},h:${frameH},img:null}`),
     `ASSETS table missing ${key}`);
 }
 
@@ -64,11 +68,11 @@ for (const [key, file] of relicIcons) {
   const meta = manifest[key];
   assert(meta && meta.type === 'icon', `manifest missing icon ${key}`);
   assert(fs.existsSync(path.join(PIXEL_DIR, file)), `${file} is missing`);
-  assert(index.includes(`icon:'${key}'`), `RELICS does not use ${key}`);
+  assert(index.includes(`icon:'${key}'`) || content.includes(`icon:'${key}'`), `RELICS does not use ${key}`);
 }
 
 for (const key of ['pf-goblin', 'pf-skeleton', 'pf-mushroom', 'pf-flying-eye']) {
-  assert(index.includes(`sprite:'${key}'`), `PLAT_LEVEL missing platformer enemy ${key}`);
+  assert(index.includes(`sprite:'${key}'`) || content.includes(`sprite:'${key}'`), `PLAT_LEVEL missing platformer enemy ${key}`);
 }
 
 assert(platformer.includes('function updateEnemies') && platformer.includes('enemyBody'),
