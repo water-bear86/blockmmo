@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "test": "node scripts/verify_core_runtime.js && node scripts/verify_chainwell_authority.js && node scripts/verify_account_binding.js && node scripts/verify_rune_spend.js && node scripts/verify_gold_cosmetics.js && node scripts/verify_presence_modes.js && node scripts/verify_area2_forks.js && node scripts/verify_segment_sequencer.js && node scripts/verify_boss_sigils.js && node scripts/verify_asset_integration.js && node scripts/verify_area1_exploration.js && node scripts/verify_area1_puzzles.js"
+    "test": "node scripts/verify_core_runtime.js && node scripts/verify_chainwell_authority.js && node scripts/verify_account_binding.js && node scripts/verify_rune_spend.js && node scripts/verify_gold_cosmetics.js && node scripts/verify_presence_modes.js && node scripts/verify_area2_forks.js && node scripts/verify_segment_sequencer.js && node scripts/verify_boss_sigils.js && node scripts/verify_asset_integration.js && node scripts/verify_area1_exploration.js && node scripts/verify_area1_puzzles.js && node scripts/verify_town_interaction.js"
   },
   "engines": {
     "node": ">=16"
