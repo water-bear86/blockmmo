@@ -810,7 +810,7 @@ addEventListener('keyup',e=>{ keys[e.code]=false; released[e.code]=true; });
 /* Codex's standalone engine modules (engine/*.js) loaded dynamically and driven
    through a host adapter. Town stays the existing top-down game; P enters the
    demo platformer, O the battlefield, T returns to Hearthlight. */
-let modeManager=null, platformerMode=null, battlefieldMode=null, turnbasedMode=null, bossSeq=null, bossEncounterEnemy=null, RCEngine=null;
+let modeManager=null, platformerMode=null, battlefieldMode=null, turnbasedMode=null, bossSeq=null, bossEncounterEnemy=null, activeWorldEntry=null, RCEngine=null;
 const engineCam={x:0,y:0,w:VIEW_W,h:VIEW_H};
 const engineApi={
   viewW:VIEW_W, viewH:VIEW_H, camera:engineCam,
@@ -846,7 +846,7 @@ const engineApi={
     send(m){ if(m&&m.t==='rc:pvp:challenge'){ const h=this._h; setTimeout(()=>{ (h['rc:pvp:accept']||[]).forEach(fn=>fn({t:'rc:pvp:accept',duelId:m.duelId,from:'stub-rival',to:m.from})); }, 350); } } },
   chain:{}, log:(m)=>log(m),
   onBossTrigger(id){ if(bossSeq&&state.mode==='sequencer'){ bossSeq.segmentEvent('boss',{id}); return; } log('A boss stirs ('+id+'). Returning to the parish.'); exitEngineMode(); },
-  onExit(id){ if(bossSeq&&state.mode==='sequencer'){ bossSeq.segmentEvent('exit',{id}); return; } log('Stage cleared ('+id+').'); exitEngineMode(); },
+  onExit(id){ if(bossSeq&&state.mode==='sequencer'){ bossSeq.segmentEvent('exit',{id}); return; } if(completeWorldEntry(id))return; log('Stage cleared ('+id+').'); exitEngineMode(); },
   onCreatureDefeated(){}, onWaveSpawn(w){ if(w&&w.id)log('Wave incoming: '+w.id); },
   onZoneCleared(id){ log('Safe ground secured: '+id); }, onMeleeHit(){},
   onDuelAccepted(m){ log('Duel accepted.'); if(state.mode==='battlefield')startTurnDuel(m&&m.from,m&&m.duelId); },
@@ -873,9 +873,11 @@ function enterEngineMode(name){
 function exitEngineMode(){
   if(state.mode==='sequencer'){ endBossSequence(); return; }
   if(state.mode==='town')return;
+  const ret=activeWorldEntry&&activeWorldEntry.returnPoint;
   if(modeManager)modeManager.setMode(null, ctx, engineApi);
   player.hp=Math.max(1,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
-  state.mode='town'; Net.updatePeers(); log('Returned to Hearthlight.');
+  if(ret){ player.x=ret.x; player.y=ret.y; player.vx=0; player.vy=0; camera.x=player.x; camera.y=player.y; syncMouseWorld(); }
+  activeWorldEntry=null; state.mode='town'; Net.updatePeers(); log('Returned to Hearthlight.');
 }
 function updateEngineMode(dt){
   modeManager.update(dt, engineInput());
@@ -1382,6 +1384,7 @@ function drawTerrain(){
 function drawDecor(){
   drawChapel();
   drawNorthPath();
+  drawWorldEntries();
   for(const f of FENCES)drawFence(f);
   for(const r of RUINS)drawRuin(r);
   for(const g of GRAVES)drawGrave(g);
@@ -1418,6 +1421,21 @@ function drawNorthPath(){
     ctx.globalAlpha=.22; ctx.fillStyle='#8ec7ff';
     ctx.beginPath(); ctx.ellipse(gate.x,gate.y+10,46,14,0,0,Math.PI*2); ctx.fill();
     ctx.globalAlpha=1;
+  }
+}
+function drawWorldEntries(){
+  const near=nearestWorldEntry();
+  for(const entry of WORLD_ENTRIES){
+    if(!worldEntryActive(entry))continue;
+    const s=worldToScreen(entry.x,entry.y);
+    const hot=near&&near.id===entry.id;
+    rect(s.x-16,s.y-8,32,16,hot?'#36556a':'#2d3a3f');
+    rect(s.x-22,s.y-20,44,14,hot?'#6f8fa0':'#53656c');
+    rect(s.x-8,s.y-8,16,16,hot?'#11191e':'#182126');
+    ctx.font='7px ui-monospace,monospace'; ctx.textAlign='center';
+    ctx.fillStyle=hot?'#f1c75b':'#aeb7b4';
+    ctx.fillText(entry.label,s.x,s.y-24);
+    if(hot)ctx.fillText('E',s.x,s.y-34);
   }
 }
 function drawChapel(){
@@ -1547,6 +1565,9 @@ const INTERACTABLES=[
   {id:'ledger-core-a',target:'ledger-core',quest:'q12',x:1944,y:-44,label:'CORE',kind:'tablet'},
   {id:'ledger-core-b',target:'ledger-core',quest:'q12',x:2000,y:38,label:'CORE',kind:'tablet'}
 ];
+const WORLD_ENTRIES=[
+  {id:'parish-road-receipts',quest:'q02',x:342,y:-112,radius:42,label:'ROAD CELLAR',title:'Parish Road Receipts',mode:'platformer',level:PLAT_LEVEL,disableBossTrigger:true,exitId:'to-mempool-yard',returnPoint:{x:342,y:-74}}
+];
 // margin-scroll (Keeper of Margins) is an OPTIONAL side-interaction, not a quest step, so its
 // key is fixed ('q06:margin-scroll') — deterministic regardless of the active quest at inscribe time,
 // which the foreman weakening gate in startBossEncounter() reads.
@@ -1567,6 +1588,50 @@ function nearestInteractable(){
   }
   return bestD<36?best:null;
 }
+function worldEntryActive(entry){
+  return !!(entry && Story.questReached(entry.quest||'q01'));
+}
+function nearestWorldEntry(){
+  if(state.mode!=='town')return null;
+  let best=null, bestD=999;
+  for(const entry of WORLD_ENTRIES){
+    if(!worldEntryActive(entry))continue;
+    const d=Math.hypot(player.x-entry.x,player.y-entry.y);
+    if(d<bestD){ best=entry; bestD=d; }
+  }
+  return best&&bestD<=(best.radius||38)?best:null;
+}
+function worldEntryLevel(entry){
+  if(!entry||!entry.disableBossTrigger)return entry&&entry.level;
+  return Object.assign({},entry.level,{bossTrigger:null});
+}
+function enterWorldEntry(entry){
+  if(!entry||!modeManager||!RCEngine||!state.started||player.dead||state.mode!=='town')return false;
+  if(state.graceOpen)closeGrace(); if(state.wardrobeOpen)closeWardrobe();
+  const ep=engineApi.player; ep.maxHp=player.maxHp; ep.maxSta=player.maxSta; ep.hp=player.hp; ep.sta=player.sta; ep.name=player.name;
+  activeWorldEntry=entry;
+  let mode;
+  if(entry.mode==='battlefield')mode=RCEngine.createBattlefieldMode(entry.level);
+  else if(entry.mode==='turnbased')mode=RCEngine.createTurnBasedMode(entry.level);
+  else mode=RCEngine.createPlatformerMode(worldEntryLevel(entry));
+  modeManager.setMode(mode, ctx, engineApi);
+  state.mode=entry.mode||'platformer'; Net.updatePeers();
+  log('Entering '+esc(entry.title||entry.label||'interior')+'. Find the exit to return.');
+  return true;
+}
+function completeWorldEntry(id){
+  const entry=activeWorldEntry;
+  if(!entry)return false;
+  if(entry.exitId&&id&&id!==entry.exitId)return false;
+  if(modeManager)modeManager.setMode(null, ctx, engineApi);
+  player.hp=Math.max(1,Math.round(engineApi.player.hp)); player.sta=engineApi.player.sta;
+  const ret=entry.returnPoint||entry;
+  player.x=ret.x; player.y=ret.y; player.vx=0; player.vy=0; player.moving=false;
+  camera.x=player.x; camera.y=player.y; syncMouseWorld();
+  activeWorldEntry=null; state.mode='town'; Net.updatePeers();
+  log('Returned from '+esc(entry.title||entry.label||'the interior')+'.');
+  return true;
+}
 function nearestNpc(){
   let best=null, bestD=999;
   for(const n of (NPCS||[])){
@@ -1585,6 +1650,11 @@ function doInteract(){
     const beat=i.townBeat&&ACT1_GRACEFALL&&ACT1_GRACEFALL.townBeats&&ACT1_GRACEFALL.townBeats.find(b=>b.id===i.townBeat);
     const lines=beat?beat.lines:(ACT1_GRACEFALL&&ACT1_GRACEFALL.interactions&&ACT1_GRACEFALL.interactions[i.target]);
     sayAct1(lines);
+    return;
+  }
+  const entry=nearestWorldEntry();
+  if(entry){
+    enterWorldEntry(entry);
     return;
   }
   const lore=nearestLore();
@@ -1957,11 +2027,13 @@ function updateHud(){
   else{
   const bossEnc=state.mode==='town'?nearestBossEncounter():null;
   const near=nearestInteractable();
+  const entry=state.mode==='town'?nearestWorldEntry():null;
   const lore=state.mode==='town'?nearestLore():null;
   const pz=state.mode==='town'?nearestPuzzleTarget():null;
   const npc=state.mode==='town'?nearestNpc():null;
   if(bossEnc){ prompt.style.display='block'; prompt.innerHTML='Press <b>F</b> to face <b>'+esc(bossEnc.type.name)+'</b>'; }
   else if(near){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> - '+esc(near.label); }
+  else if(entry){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to enter <b>'+esc(entry.title||entry.label)+'</b>'; }
   else if(lore){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to examine <b>'+esc(lore.title)+'</b>'; }
   else if(pz){ prompt.style.display='block'; prompt.innerHTML=pz.clue?('Press <b>E</b> to read the <b>'+esc(pz.clue.label)+'</b>'):('Press <b>E</b> to stamp <b>'+esc(pz.node.label)+'</b>'); }
   else if(npc){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to speak with <b>'+esc(npc.name)+'</b>'; }
