@@ -37,6 +37,13 @@ of record** for RUNE, Gold, levels, items, and season state. Solana lives **only
 
 "Marketing" is a single operator-discretion bucket (F5.4) — **not** a committed prize pool.
 Consistent with **C1**: settlement buys **Gold, a cosmetic currency** — it never buys power.
+Per **Q-F6a**, this is a custom Anchor program, not a client-built multi-instruction
+transaction, so the server can construct/validate one authoritative settlement payload and
+the program can enforce the atomic split in one instruction. Per **Q-F6b**, the settlement
+asset is the SPL Token Program native wSOL mint
+`So11111111111111111111111111111111111111112`; deployment and server integration must pin
+or validate that mint rather than treating the settlement asset as an arbitrary deploy-time
+pick.
 
 ## `runechain-character` (F7)
 
@@ -59,10 +66,13 @@ program escrow while listed and is released only on a valid sale.
 Keypairs live in `contracts/keys/` (gitignored — they are deploy secrets). Regenerate +
 `declare_id!`/`Anchor.toml` if you rotate them.
 
+## Closed decisions (tracked in PRD)
+
+- **Q-F6a** — settlement is a custom Anchor program, not a client-built multi-instruction tx.
+- **Q-F6b** — settlement uses the SPL Token Program native wSOL mint `So11111111111111111111111111111111111111112`.
+
 ## Open questions (tracked in PRD)
 
-- **Q-F6a** — settlement as a custom Anchor program (chosen here) vs client-built multi-instruction tx.
-- **Q-F6b** — which wrapped-SOL mint to settle in. The program is **mint-agnostic** (the mint is passed per call); pick at deploy.
 - **Q-F7a** — status of a character whose window closed with tasks unfinished (locked / penalty / auto-reset). The gate currently just keeps it unsellable; needs an explicit rule.
 - **Q-F7b** — transfer-hook vs escrow gating. **Escrow** is implemented; transfer-hook is the alternative.
 - **Ruling 8 (open)** — whether power-granting RUNE relics / Boss Sigils transfer with the collection or reset with stats. Decides whether a sale can convey any power.

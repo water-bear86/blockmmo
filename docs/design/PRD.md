@@ -234,13 +234,17 @@ to the player on the Chainwell.
   (e.g. Phantom) as **one adapter**, not the only path, so a future mobile-wallet
   connection is not designed out.
 
-**Open.**
-- **Q-F6a [OPEN]** Settlement as a custom **Anchor program** (clean atomic 3-way routing in
-  one instruction) vs. a **client-built multi-instruction transaction** using the standard
-  SPL token program. The burn alone is doable client-side and trustlessly; atomic 3-way
-  routing argues for a program. Server-authority (U7) also argues for server-constructed/
-  validated transactions.
-- **Q-F6b [OPEN]** Which wrapped-SOL mint is settled in.
+**Architecture decisions.**
+- **Q-F6a [DECIDED]** Settlement is a custom **Anchor program**, not a client-built
+  multi-instruction transaction. The burn alone is doable client-side and trustlessly, but
+  the product needs one atomic settlement instruction that validates the configured
+  destinations and either completes the 50/35/15 split or reverts. Server-authority (U7)
+  also requires server-constructed/server-validated transactions so clients only sign the
+  authoritative settlement payload.
+- **Q-F6b [DECIDED]** Settlement uses the SPL Token Program native wSOL mint
+  `So11111111111111111111111111111111111111112`. Implementation and deployment must pin
+  or validate that mint at the settlement seam; arbitrary wrapped-SOL-compatible mints are
+  not acceptable settlement assets.
 
 ---
 
@@ -406,8 +410,8 @@ Consolidated. Each is referenced inline above.
 | Q-F5a | U3 cap's exact unit and value | Balance |
 | Q-F5b | RUNE→Gold and wSOL→Gold rates | Balance |
 | Q-F5c | Season reset of paid QOL — to zero or to a baseline floor | Design |
-| Q-F6a | Settlement: custom Anchor program vs. client-built multi-instruction tx | Architecture |
-| Q-F6b | Which wrapped-SOL mint to settle in | Architecture |
+| Q-F6a | CLOSED: settlement is a custom Anchor program; the server constructs/validates the tx rather than relying on a client-built multi-instruction tx | Architecture |
+| Q-F6b | CLOSED: settlement uses the SPL Token Program native wSOL mint `So11111111111111111111111111111111111111112` | Architecture |
 | Q-F7a | Status of a character whose window closed with tasks unfinished | Design (gate) |
 | Q-F7b | Transfer-gating mechanism: transfer-hook vs. escrow-program | Architecture |
 | Q-S2a | CLOSED: authoritative Chainwell validates server-issued `mine:submit` blocks only | Architecture |

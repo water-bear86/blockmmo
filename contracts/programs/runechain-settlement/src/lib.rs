@@ -1,10 +1,11 @@
 //! RUNECHAIN real-money settlement (PRD F6).
 //!
-//! A single, atomic instruction routes a wrapped-SOL (or whichever mint is settled in,
-//! Q-F6b) payment three ways — **50% true SPL burn · 35% marketing · 15% ops** (F5.4) — and
-//! emits a `GoldPurchased` event the authoritative Chainwell server reconciles to credit
-//! Gold off-chain (S1.2 seam). Gold is **never minted here**; this program only moves the
-//! real-money leg and proves the split happened.
+//! A single, atomic instruction routes a configured native-wSOL settlement payment
+//! (PRD Q-F6b: `So11111111111111111111111111111111111111112`) three ways — **50% true SPL
+//! burn · 35% marketing · 15% ops** (F5.4) — and emits a `GoldPurchased` event the
+//! authoritative Chainwell server reconciles to credit Gold off-chain (S1.2 seam). Gold is
+//! **never minted here**; this program only moves the real-money leg and proves the split
+//! happened.
 //!
 //! Invariants:
 //! - F6.1 Atomicity: all three legs happen in one instruction, or the tx reverts. A partial
