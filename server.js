@@ -44,6 +44,26 @@ const AUTHORITY_TIERS = Object.freeze({
     'movement-relay',
   ]),
 });
+const CHAINWELL_BLOCK_RULES = Object.freeze({
+  rawClientBlocks: 'disabled',
+  acceptedSubmission: 'server-issued-mine-submit',
+  forkPolicy: 'server-canonical-tip',
+  validator: 'validateBlockCandidate',
+  candidateMatchFields: Object.freeze(['index', 'prev', 'time', 'txs']),
+  submittedProofFields: Object.freeze(['nonce', 'hash']),
+  rejectionCodes: Object.freeze({
+    rawClientBlock: 'client_block_submission_disabled',
+    unknownCandidate: 'unknown_mining_candidate',
+    invalidCandidate: 'invalid_mining_candidate',
+    replayedCandidate: 'mining_candidate_replayed',
+    invalidBlockIndex: 'invalid_block_index',
+    invalidBlockParent: 'invalid_block_parent',
+    invalidBlockTime: 'invalid_block_time',
+    invalidBlockHash: 'invalid_block_hash',
+    invalidBlockDifficulty: 'invalid_block_difficulty',
+    invalidBlockNonce: 'invalid_block_nonce',
+  }),
+});
 const SERVER_ARBITRATED_MESSAGE_TYPES = new Set([
   'rc:pvp:hit',
   'rc:pvp:forfeit',
@@ -70,6 +90,7 @@ function createRealmServer(options = {}) {
   const quiet = !!options.quiet;
   const clients = new Set();
   const pendingMining = new Map();
+  const settledMiningCandidates = new Map();
   const validatedOutcomes = new Set();
   const accountRegistry = options.accountRegistry || createAccountRegistry({ accountsFile, seasonId, now });
   let saveTimer = null;
@@ -312,7 +333,7 @@ function createRealmServer(options = {}) {
   }
 
   function acceptBlock() {
-    return blockError('client_block_submission_disabled', 'Connected realms only accept server-issued mining work.');
+    return blockError(CHAINWELL_BLOCK_RULES.rejectionCodes.rawClientBlock, 'Connected realms only accept server-issued mining work.');
   }
 
   function appendBlock(block) {
@@ -518,21 +539,29 @@ function createRealmServer(options = {}) {
 
   function acceptMinedWork(client, candidateId, block) {
     cleanupMiningCandidates();
+    const replay = settledMiningCandidates.get(candidateId);
+    if (replay && replay.accountId === client.accountId && replay.characterId === client.character.id) {
+      const result = blockError(CHAINWELL_BLOCK_RULES.rejectionCodes.replayedCandidate, 'Mining candidate has already been accepted.');
+      send(client, { t: 'mine:error', error: result.error, chain: masterChain });
+      return result;
+    }
+
     const candidate = pendingMining.get(candidateId);
-    if (!candidate || candidate.characterId !== client.character.id) {
-      const result = blockError('unknown_mining_candidate', 'Mining candidate is unknown or no longer valid.');
+    if (!candidate || candidate.accountId !== client.accountId || candidate.characterId !== client.character.id) {
+      const result = blockError(CHAINWELL_BLOCK_RULES.rejectionCodes.unknownCandidate, 'Mining candidate is unknown or no longer valid.');
       send(client, { t: 'mine:error', error: result.error, chain: masterChain });
       return result;
     }
 
     if (!matchesMiningCandidate(candidate.block, block)) {
-      const result = blockError('invalid_mining_candidate', 'Submitted block does not match the server-issued mining candidate.');
+      const result = blockError(CHAINWELL_BLOCK_RULES.rejectionCodes.invalidCandidate, 'Submitted block does not match the server-issued mining candidate.');
       send(client, { t: 'mine:error', error: result.error, chain: masterChain });
       return result;
     }
 
     const tip = masterChain[masterChain.length - 1];
-    const result = validateBlockCandidate(block, tip, { sha256, difficulty, now, futureSkewMs });
+    const canonicalBlock = canonicalMinedBlock(candidate.block, block);
+    const result = validateBlockCandidate(canonicalBlock, tip, { sha256, difficulty, now, futureSkewMs });
     if (!result.ok) {
       if (isStaleCandidateError(result.error.code)) pendingMining.delete(candidateId);
       send(client, { t: 'mine:error', error: result.error, chain: masterChain });
@@ -540,12 +569,18 @@ function createRealmServer(options = {}) {
     }
 
     pendingMining.delete(candidateId);
-    const accepted = appendBlock(block);
-    accountRegistry.applyAcceptedBlock(block);
+    settledMiningCandidates.set(candidateId, {
+      accountId: candidate.accountId,
+      characterId: candidate.characterId,
+      blockHash: canonicalBlock.hash,
+      settledAt: now(),
+    });
+    const accepted = appendBlock(canonicalBlock);
+    accountRegistry.applyAcceptedBlock(canonicalBlock);
     const currentCharacter = accountRegistry.getCharacterState(client.accountId);
     if (currentCharacter.ok) client.character = currentCharacter.character;
-    send(client, { t: 'mine:accepted', block });
-    broadcast({ t: 'block', block }, client);
+    send(client, { t: 'mine:accepted', block: canonicalBlock });
+    broadcast({ t: 'block', block: canonicalBlock }, client);
     return accepted;
   }
 
@@ -561,6 +596,9 @@ function createRealmServer(options = {}) {
     for (const [candidateId, candidate] of pendingMining) {
       if (candidate.createdAt < cutoff) pendingMining.delete(candidateId);
     }
+    for (const [candidateId, candidate] of settledMiningCandidates) {
+      if (candidate.settledAt < cutoff) settledMiningCandidates.delete(candidateId);
+    }
   }
 
   function isStaleCandidateError(code) {
@@ -573,6 +611,17 @@ function createRealmServer(options = {}) {
       submittedBlock.prev === candidateBlock.prev &&
       submittedBlock.time === candidateBlock.time &&
       JSON.stringify(submittedBlock.txs) === JSON.stringify(candidateBlock.txs);
+  }
+
+  function canonicalMinedBlock(candidateBlock, submittedBlock) {
+    return {
+      index: candidateBlock.index,
+      prev: candidateBlock.prev,
+      time: candidateBlock.time,
+      txs: clone(candidateBlock.txs),
+      nonce: submittedBlock.nonce,
+      hash: submittedBlock.hash,
+    };
   }
 
   function resolveRewardSource(source) {
@@ -1525,6 +1574,7 @@ if (require.main === module) {
 
 module.exports = {
   AUTHORITY_TIERS,
+  CHAINWELL_BLOCK_RULES,
   createRealmServer,
   createAccountRegistry,
   decodeFrame,

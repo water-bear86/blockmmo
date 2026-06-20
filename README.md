@@ -106,8 +106,8 @@ lives in the `ECON`, `SKINS`, and `RELICS` tables in [`game/content.js`](game/co
 - **A real blockchain economy** — from-scratch SHA-256 proof-of-work chain (verified
   against Node's `crypto`), server-issued RUNE reward work in connected realms,
   local prototype mining in solo mode, on-chain debits when levelling,
-  unique Boss Sigil assets, and pending-debit anti-double-spend accounting. Blocks
-  gossip across the network so the realm converges on one ledger.
+  unique Boss Sigil assets, and pending-debit anti-double-spend accounting. Only
+  server-accepted blocks broadcast from the canonical realm ledger in connected play.
 - **MMO server** — `server.js` is an authoritative relay implementing WebSocket and
   static serving by hand, with **zero dependencies**.
 

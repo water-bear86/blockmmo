@@ -232,6 +232,29 @@ Authority policy is exported as `AUTHORITY_TIERS` for deterministic verification
 tests. Client-authored PvP result/hit/forfeit messages are rejected until a server-arbitrated
 turn protocol is implemented.
 
+## Chainwell block validation rules (Q-S2a)
+
+Connected realms use a server-canonical Chainwell. Clients do not submit arbitrary blocks
+and the server does not adopt a longer client chain. Raw `block` messages are rejected with
+`client_block_submission_disabled`; accepted ledger writes enter only through server-issued
+`mine:work` followed by `mine:submit`.
+
+The exported `CHAINWELL_BLOCK_RULES` contract documents the live server policy:
+
+- Raw client blocks are disabled.
+- The only accepted connected-realm block submission is `server-issued-mine-submit`.
+- Fork policy is `server-canonical-tip`; a submitted block must extend the current server
+  tip, not a client fork.
+- Candidate identity is the server-issued `index`, `prev`, `time`, and `txs` payload.
+- The browser contributes only proof fields: `nonce` and `hash`.
+- `server.js` rebuilds the accepted block from the pending server candidate plus those proof
+  fields, so extra top-level submitted fields are stripped before persistence or broadcast.
+- Final validation is shared `validateBlockCandidate`: safe integer index/time/nonce,
+  parent hash matching the server tip, monotonic timestamp with future-skew guard,
+  recomputed lowercase 64-character hash, and the configured difficulty prefix.
+- Replayed accepted candidate IDs return `mining_candidate_replayed`; stolen, unknown, or
+  expired candidate IDs return `unknown_mining_candidate`.
+
 ## Turn-based RPG battle mode (`turnbased.js`, PRD F2.4)
 
 `createTurnBasedMode(encounter)` returns the same `{enter, exit, update, render, getState}`

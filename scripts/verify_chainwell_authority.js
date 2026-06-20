@@ -151,6 +151,32 @@ assert.strictEqual(
 const serverApi = require(path.join(root, 'server.js'));
 assert.strictEqual(typeof serverApi.createRealmServer, 'function', 'server should export createRealmServer');
 assert.strictEqual(typeof serverApi.decodeFrame, 'function', 'server should export decodeFrame');
+assert(serverApi.CHAINWELL_BLOCK_RULES && typeof serverApi.CHAINWELL_BLOCK_RULES === 'object', 'server should export Chainwell block validation rules');
+assert(Object.isFrozen(serverApi.CHAINWELL_BLOCK_RULES), 'server should export frozen Chainwell block validation rules');
+assert.strictEqual(serverApi.CHAINWELL_BLOCK_RULES.rawClientBlocks, 'disabled', 'raw client block submission should stay disabled');
+assert.strictEqual(serverApi.CHAINWELL_BLOCK_RULES.acceptedSubmission, 'server-issued-mine-submit', 'server should accept only issued mine:submit work');
+assert.strictEqual(serverApi.CHAINWELL_BLOCK_RULES.forkPolicy, 'server-canonical-tip', 'server should reject forks instead of adopting longest chain');
+assert.strictEqual(serverApi.CHAINWELL_BLOCK_RULES.validator, 'validateBlockCandidate', 'server should use the shared candidate validator');
+assert.deepStrictEqual(
+  serverApi.CHAINWELL_BLOCK_RULES.candidateMatchFields,
+  ['index', 'prev', 'time', 'txs'],
+  'server candidate identity should be index/parent/time/tx payload'
+);
+assert.deepStrictEqual(
+  serverApi.CHAINWELL_BLOCK_RULES.submittedProofFields,
+  ['nonce', 'hash'],
+  'clients should only contribute nonce/hash proof to server-issued blocks'
+);
+assert.strictEqual(
+  serverApi.CHAINWELL_BLOCK_RULES.rejectionCodes.rawClientBlock,
+  'client_block_submission_disabled',
+  'raw client block rejection code should be documented'
+);
+assert.strictEqual(
+  serverApi.CHAINWELL_BLOCK_RULES.rejectionCodes.replayedCandidate,
+  'mining_candidate_replayed',
+  'replayed accepted candidate rejection code should be documented'
+);
 
 function makeClient(id) {
   return {
@@ -243,8 +269,10 @@ const realm = serverApi.createRealmServer({
 });
 const submitter = makeClient('submitter');
 const peer = makeClient('peer');
+const hijacker = makeClient('hijacker');
 realm.addClient(submitter);
 realm.addClient(peer);
+realm.addClient(hijacker);
 
 assert.strictEqual(realm.getChain().length, 1, 'empty server ledger should start at genesis');
 const serverGenesis = realm.getChain()[0];
@@ -267,6 +295,11 @@ const peerJoin = authenticateClient(realm, peer, makeCredential(), {
   name: 'Witness',
 });
 assert.deepStrictEqual(peerJoin.chain, { t: 'chain', chain: [serverGenesis] });
+const hijackerJoin = authenticateClient(realm, hijacker, makeCredential(), {
+  peerId: 'hijacker',
+  name: 'Hijacker',
+});
+assert.deepStrictEqual(hijackerJoin.chain, { t: 'chain', chain: [serverGenesis] });
 
 function assertClientBlockDisabled(block, label) {
   const before = realm.getChain();
@@ -353,6 +386,18 @@ assertRejected(duplicateRewardRequest, 'mining_candidate_pending');
 assert.strictEqual(realm.getChain().length, 1, 'pending reward work should cap each client at one candidate');
 assert.strictEqual(readMessages(submitter)[0].error.code, 'mining_candidate_pending');
 
+const stolenWork = mineBlock(rewardWork.work.block, 1);
+hijacker.character = submitter.character;
+const rejectedStolenWork = realm.handleParsedMessage(hijacker, {
+  t: 'mine:submit',
+  candidateId: rewardWork.work.candidateId,
+  block: stolenWork,
+});
+assertRejected(rejectedStolenWork, 'unknown_mining_candidate');
+assert.strictEqual(realm.getChain().length, 1, 'stolen candidate with forged character state should not append');
+assert.strictEqual(readMessages(peer).length, 0, 'stolen candidate should not broadcast');
+assert.strictEqual(readMessages(hijacker)[0].error.code, 'unknown_mining_candidate');
+
 const tamperedWork = mineBlock({
   ...rewardWork.work.block,
   txs: [{ ...rewardWork.work.block.txs[0], amt: 1400 }],
@@ -368,6 +413,7 @@ assert.strictEqual(readMessages(peer).length, 0, 'tampered server work should no
 assert.strictEqual(readMessages(submitter)[0].error.code, 'invalid_mining_candidate');
 
 const minedRewardBlock = mineBlock(rewardWork.work.block, 1);
+minedRewardBlock.clientInjectedField = 'strip-me';
 const acceptedRewardWork = realm.handleParsedMessage(submitter, {
   t: 'mine:submit',
   candidateId: rewardWork.work.candidateId,
@@ -375,10 +421,22 @@ const acceptedRewardWork = realm.handleParsedMessage(submitter, {
 });
 assert.strictEqual(acceptedRewardWork.ok, true, 'server-authorized mined reward work should be accepted');
 assert.strictEqual(realm.getChain().length, 2, 'accepted reward work should append');
-assert.deepStrictEqual(realm.getChain()[1], minedRewardBlock);
-assert.deepStrictEqual(readMessages(submitter)[0], { t: 'mine:accepted', block: minedRewardBlock });
-assert.deepStrictEqual(readMessages(peer)[0], { t: 'block', block: minedRewardBlock });
-assert.deepStrictEqual(JSON.parse(fs.readFileSync(ledgerFile, 'utf8')), [serverGenesis, minedRewardBlock]);
+const canonicalRewardBlock = { ...rewardWork.work.block, nonce: minedRewardBlock.nonce, hash: minedRewardBlock.hash };
+assert.deepStrictEqual(realm.getChain()[1], canonicalRewardBlock, 'accepted block should be rebuilt from server candidate plus nonce/hash only');
+assert.strictEqual(realm.getChain()[1].clientInjectedField, undefined, 'submitted top-level fields should not persist to the ledger');
+assert.deepStrictEqual(readMessages(submitter)[0], { t: 'mine:accepted', block: canonicalRewardBlock });
+assert.deepStrictEqual(readMessages(peer)[0], { t: 'block', block: canonicalRewardBlock });
+assert.deepStrictEqual(JSON.parse(fs.readFileSync(ledgerFile, 'utf8')), [serverGenesis, canonicalRewardBlock]);
+
+const replayedRewardWork = realm.handleParsedMessage(submitter, {
+  t: 'mine:submit',
+  candidateId: rewardWork.work.candidateId,
+  block: minedRewardBlock,
+});
+assertRejected(replayedRewardWork, 'mining_candidate_replayed');
+assert.strictEqual(realm.getChain().length, 2, 'replayed accepted candidate should not append again');
+assert.strictEqual(readMessages(peer).length, 0, 'replayed accepted candidate should not broadcast');
+assert.strictEqual(readMessages(submitter)[0].error.code, 'mining_candidate_replayed');
 
 realm.close();
 fs.rmSync(tempDir, { recursive: true, force: true });
