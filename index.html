@@ -58,8 +58,9 @@
   #log div{display:inline-block;max-width:100%;margin:0 0 5px;padding:5px 7px;background:rgba(7,8,10,.64);
     border:1px solid rgba(241,199,91,.25);opacity:0;animation:logfade 4.6s forwards}
   @keyframes logfade{0%{opacity:0;transform:translateY(-5px)}8%{opacity:1;transform:none}82%{opacity:1}100%{opacity:0}}
-  #prompt{bottom:78px;left:50%;transform:translateX(-50%);display:none;background:var(--panel);border:2px solid var(--gold);
-    box-shadow:0 0 0 2px #050607;padding:7px 12px;font-size:12px;color:var(--gold);text-align:center}
+  #prompt{bottom:78px;left:50%;transform:translateX(-50%);opacity:0;pointer-events:none;background:var(--panel);border:2px solid var(--gold);
+    box-shadow:0 0 0 2px #050607;padding:7px 12px;font-size:12px;color:var(--gold);text-align:center;transition:opacity .15s,transform .15s}
+  #prompt.on{opacity:1;transform:translateX(-50%) translateY(-4px);pointer-events:auto}
   #bossbar{display:none;left:50%;top:16px;transform:translateX(-50%);width:min(520px,58vw);text-align:center;
     color:var(--gold);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
   #bossbar .bar{height:12px;margin-top:5px;background:#170909;border-color:#050607}
@@ -104,6 +105,7 @@
   button:hover:not(:disabled){border-color:var(--gold);background:#222820}
   button:disabled{opacity:.42;cursor:default}
   button:focus-visible, input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  button:active{transform:translateY(1px);filter:brightness(.9)}
   @keyframes low-hp-pulse{
     0%{filter:brightness(1)}
     50%{filter:brightness(1.4)}
@@ -388,7 +390,11 @@ const Dialogue=(function(){
   }
   function choose(){
     const n=node(); if(!n||!atLastLine()||!(n.choices&&n.choices.length))return false;
-    goTo(n.choices[active.sel].goto);
+    const picked=n.choices[active.sel];
+    // Optional side-effect hook: a synthetic dialogue (e.g. the Auditor's ending) can react to the
+    // chosen option. Plain NPC dialogues omit onChoose and just branch via goto as before.
+    if(active.npc&&typeof active.npc.onChoose==='function')active.npc.onChoose(picked);
+    goTo(picked.goto);
     return true;
   }
   // E / Space when a dialogue is open: pick a choice if one is showing, else advance text.
@@ -547,6 +553,7 @@ function hurtPlayer(amount){
   if(player.hp<=0){
     player.dead=true;
     document.getElementById('death').style.display='flex';
+    document.getElementById('respawn').focus();
     log('You died. Hearthlight will reset your body, not the chain.');
   }
 }
@@ -651,6 +658,9 @@ function hitEnemy(e, amount){
   if(e.hp<=0)killEnemy(e);
 }
 function killEnemy(e){
+  // The Auditor cannot be killed — any "defeat" funnels into the three-ending choice instead
+  // of a normal kill/sigil-mint (issue #24). The sigil (amended-record) is Choice C only.
+  if(e.key==='auditor'){ openAuditorChoice(e); return; }
   e.dead=true; e.deathT=1.2; state.shake=e.type.boss?7:3;
   if(e.key==='hollow')progress.hollows++;
   const bonus=itemBonuses();
@@ -668,6 +678,58 @@ function killEnemy(e){
     if(e.key==='tallow'&&northPathUnlocked())log('<b style="color:#f1c75b">North path opened:</b> Shroud Vaults.');
   }
 }
+/* ---- Area 3 finale: the Auditor's three permanent endings (issue #24) ------
+   The Auditor is never killed. Reaching it opens a choice of three account-bound endings;
+   the ledger is preserved (no RUNE wipe). Choice C ('amend') is the only path to the Amended
+   Record sigil and the endgame. The choice is non-stranding: Escape just defers it (the enemy
+   stays until answered, and F reopens the choice without re-running the ascent). */
+let auditorEnemy=null, auditorReached=false;
+function auditorEndingNpc(){
+  const nodes={ intro:{
+    speaker:'The Auditor', text:[
+      'The Auditor faces you, a column of scrolling text. "Your account does not reconcile. One entry must be corrected."',
+      'It offers you the registry, and a second quill. There is no killing this. Only an answer — and it is permanent.'
+    ],
+    choices:(AUDITOR_ENDINGS||[]).map((e)=>({ label:e.label, goto:'end-'+e.id, ending:e.id }))
+  } };
+  (AUDITOR_ENDINGS||[]).forEach((e)=>{ nodes['end-'+e.id]={ speaker:'The Auditor', text:e.lines }; });
+  return { id:'the-auditor', name:'The Auditor', role:'Archive of Attestation', color:'#f0f0e8',
+    dialogue:{ start:'intro', nodes },
+    onChoose(choice){ if(choice&&choice.ending)resolveAuditorChoice(choice.ending); } };
+}
+function openAuditorChoice(enemy){
+  auditorEnemy=enemy||auditorEnemy;
+  if(progress.ending){ // permanent — restate, never re-roll
+    const chosen=(AUDITOR_ENDINGS||[]).find((e)=>e.id===progress.ending);
+    log('<b style="color:#f0f0e8">The Auditor:</b> Your record stands as you left it — '+esc(chosen?chosen.title:progress.ending)+'. The choice was permanent.');
+    if(auditorEnemy){ auditorEnemy.dead=true; auditorEnemy.deathT=1.2; }
+    return;
+  }
+  auditorReached=true;
+  if(Dialogue.isOpen())return;
+  Dialogue.open(auditorEndingNpc());
+}
+function resolveAuditorChoice(id){
+  if(progress.ending)return; // permanent, account-bound
+  const ending=(AUDITOR_ENDINGS||[]).find((e)=>e.id===id);
+  if(!ending)return;
+  progress.ending=ending.id;
+  log('<b style="color:#f0f0e8">Ending '+esc(ending.id)+' — '+esc(ending.title.replace(/^Ending [A-C] — /,''))+'</b> is recorded. It is permanent and account-bound.');
+  (ending.lines||[]).forEach((t)=>log('<span style="color:#d8d2c4">'+esc(t)+'</span>'));
+  // Ledger is PRESERVED across every ending — no RUNE wipe / relic destruction (scope ruling).
+  if(ending.sigil){ // Choice C only: seal the Amended Record sigil via the prototype ledger path
+    const rune={ id:'auditor-'+ending.id+'-'+Date.now(), name:(SIGILS[ending.sigil]&&SIGILS[ending.sigil].name)||'The Amended Record', key:ending.sigil, buff:0 };
+    Chain.mintGreatRune(valueAddress(),rune);
+    Story.event('greatRune',{rune:rune.id});
+  }
+  if(ending.endgame){ progress.endgameUnlocked=true; log('<b style="color:#f1c75b">The Amendment endgame is open</b> — contestation echoes await.'); }
+  // Resolve (not kill) the Auditor: it leaves the field without a combat death / unconditional mint.
+  if(auditorEnemy){ auditorEnemy.dead=true; auditorEnemy.deathT=1.2; }
+  Story.event('ending',{choice:ending.id}); // completes q13 (done.event==='ending')
+  lootFlash('<b>'+esc(ending.title)+'</b><br><span style="font-size:13px;color:#d8d2c4">Ending recorded'+(ending.sigil?' · Amended Record sealed':'')+'</span>');
+  updateHud();
+}
+function endgameUnlocked(){ return !!progress.endgameUnlocked; }
 function updateEnemies(dt){
   let attackers=0;
   for(const e of enemies){
@@ -951,6 +1013,9 @@ function nearestBossEncounter(){
   return best;
 }
 function startBossEncounter(enemy){
+  // The Auditor: once already reached (or once answered) re-engaging reopens the choice directly
+  // rather than re-running the ascent/rift — the climax is the answer, not the fight.
+  if(enemy&&enemy.key==='auditor'&&(auditorReached||progress.ending)){ openAuditorChoice(enemy); return; }
   const script=enemy&&(AREA1_ENCOUNTERS[enemy.key]||AREA2_ENCOUNTERS[enemy.key]||AREA3_ENCOUNTERS[enemy.key]);
   if(!modeManager||!RCEngine||!RCEngine.createSegmentSequencer||!script||!state.started||player.dead||state.mode!=='town')return;
   if(state.graceOpen)closeGrace(); if(state.wardrobeOpen)closeWardrobe();
@@ -1009,6 +1074,7 @@ function openGrace(){
   state.graceOpen=true; player.hp=player.maxHp; player.sta=player.maxSta;
   Story.event('visit',{site:'hearthlight'});
   document.getElementById('levelup').style.display='flex';
+  document.getElementById('lvclose').focus();
   refreshGrace();
 }
 function closeGrace(){ state.graceOpen=false; document.getElementById('levelup').style.display='none'; }
@@ -1057,7 +1123,9 @@ function forgeRelic(it){
 }
 function openWardrobe(){
   if(!state.started||player.dead)return;
-  state.wardrobeOpen=true; document.getElementById('wardrobe').style.display='flex'; refreshWardrobe();
+  state.wardrobeOpen=true; document.getElementById('wardrobe').style.display='flex';
+  document.getElementById('wclose').focus();
+  refreshWardrobe();
 }
 function closeWardrobe(){ state.wardrobeOpen=false; document.getElementById('wardrobe').style.display='none'; }
 document.getElementById('wclose').onclick=closeWardrobe;
@@ -2005,7 +2073,7 @@ function updateHud(){
   Story.updateHud();
   updateWallet();
   const prompt=document.getElementById('prompt');
-  if(Dialogue.isOpen()){ prompt.style.display='none'; }
+  if(Dialogue.isOpen()){ prompt.classList.remove('on'); }
   else{
   const bossEnc=state.mode==='town'?nearestBossEncounter():null;
   const near=nearestInteractable();
@@ -2071,6 +2139,7 @@ initWorld();
 Story.updateHud();
 Net.updatePeers();
 updateHud();
+document.getElementById('name').focus();
 </script>
 </body>
 </html>
