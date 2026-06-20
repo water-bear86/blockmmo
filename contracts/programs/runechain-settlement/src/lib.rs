@@ -22,6 +22,35 @@ pub const BURN_BPS: u16 = 5_000; // 50% burned (F6.2)
 pub const MARKETING_BPS: u16 = 3_500; // 35% operator-discretion marketing bucket (not a prize pool)
 pub const OPS_BPS: u16 = 1_500; // 15% ops fee (single recipient)
 
+/// The three legs of a settled payment (F5.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Split {
+    pub burn: u64,
+    pub marketing: u64,
+    pub ops: u64,
+}
+
+/// Pure F5.4 split — the load-bearing money math, factored out so it is unit-testable without a
+/// validator. `burn` and `marketing` are floor(bps) of `amount`; `ops` takes the exact remainder,
+/// so `burn + marketing + ops == amount` with **zero lamports lost or created** (F6.1 atomicity).
+/// Rejects a zero amount and a bps set that does not sum to 10_000.
+pub fn compute_split(amount: u64, burn_bps: u16, marketing_bps: u16, ops_bps: u16) -> Result<Split> {
+    require!(amount > 0, SettlementError::ZeroAmount);
+    require_eq!(
+        burn_bps as u32 + marketing_bps as u32 + ops_bps as u32,
+        10_000u32,
+        SettlementError::InvalidSplit
+    );
+    let burn = (amount as u128 * burn_bps as u128 / 10_000) as u64;
+    let marketing = (amount as u128 * marketing_bps as u128 / 10_000) as u64;
+    // ops absorbs the rounding remainder; checked_sub guards against any underflow.
+    let ops = amount
+        .checked_sub(burn)
+        .and_then(|v| v.checked_sub(marketing))
+        .ok_or(SettlementError::MathOverflow)?;
+    Ok(Split { burn, marketing, ops })
+}
+
 #[program]
 pub mod runechain_settlement {
     use super::*;
@@ -58,14 +87,9 @@ pub mod runechain_settlement {
     pub fn purchase_gold(ctx: Context<PurchaseGold>, amount: u64) -> Result<()> {
         let config = &ctx.accounts.config;
         require!(!config.paused, SettlementError::Paused);
-        require!(amount > 0, SettlementError::ZeroAmount);
 
-        let burn_amt = (amount as u128 * config.burn_bps as u128 / 10_000) as u64;
-        let mkt_amt = (amount as u128 * config.marketing_bps as u128 / 10_000) as u64;
-        let ops_amt = amount
-            .checked_sub(burn_amt)
-            .and_then(|v| v.checked_sub(mkt_amt))
-            .ok_or(SettlementError::MathOverflow)?;
+        let Split { burn: burn_amt, marketing: mkt_amt, ops: ops_amt } =
+            compute_split(amount, config.burn_bps, config.marketing_bps, config.ops_bps)?;
 
         let decimals = ctx.accounts.mint.decimals;
         let token_program = ctx.accounts.token_program.to_account_info();
@@ -196,4 +220,61 @@ pub enum SettlementError {
     MathOverflow,
     #[msg("Destination token account owner does not match config")]
     WrongDestination,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn split(amount: u64) -> Split {
+        compute_split(amount, BURN_BPS, MARKETING_BPS, OPS_BPS).unwrap()
+    }
+
+    #[test]
+    fn constants_sum_to_full_basis_points() {
+        // F5.4: the configured split must be exhaustive — no implicit fourth bucket.
+        assert_eq!(BURN_BPS + MARKETING_BPS + OPS_BPS, 10_000);
+    }
+
+    #[test]
+    fn split_is_exact_and_lossless() {
+        // F6.1 atomicity in numbers: the three legs must reconstruct the input exactly, for any
+        // amount — no dust burned into the void, none conjured.
+        for a in [1u64, 2, 3, 7, 10, 99, 100, 101, 1_000, 1_000_000, 999_999_937, u64::MAX / 2, u64::MAX] {
+            let s = split(a);
+            assert_eq!(s.burn + s.marketing + s.ops, a, "legs must sum to amount for {a}");
+        }
+    }
+
+    #[test]
+    fn round_amount_hits_exact_50_35_15() {
+        assert_eq!(split(10_000), Split { burn: 5_000, marketing: 3_500, ops: 1_500 });
+        assert_eq!(split(1_000_000), Split { burn: 500_000, marketing: 350_000, ops: 150_000 });
+    }
+
+    #[test]
+    fn ops_absorbs_the_rounding_remainder() {
+        // 101: floor(50%)=50, floor(35%)=35, leaving 16 for ops (its 15 + the 1-unit remainder).
+        assert_eq!(split(101), Split { burn: 50, marketing: 35, ops: 16 });
+    }
+
+    #[test]
+    fn burn_leg_is_at_least_the_marketing_leg() {
+        // 50% floor >= 35% floor for every amount — the burn is always the largest *configured* leg.
+        for a in [1u64, 100, 101, 12_345, 7_777_777, u64::MAX] {
+            let s = split(a);
+            assert!(s.burn >= s.marketing, "burn must be >= marketing for {a}");
+        }
+    }
+
+    #[test]
+    fn rejects_zero_amount() {
+        assert!(compute_split(0, BURN_BPS, MARKETING_BPS, OPS_BPS).is_err());
+    }
+
+    #[test]
+    fn rejects_bps_that_do_not_sum_to_10000() {
+        assert!(compute_split(1_000, 5_000, 3_500, 1_400).is_err()); // 9_900
+        assert!(compute_split(1_000, 6_000, 3_500, 1_500).is_err()); // 11_000
+    }
 }

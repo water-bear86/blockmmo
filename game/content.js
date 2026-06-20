@@ -317,7 +317,93 @@ const SKINS = [
   { id:'verdant', name:'Verdant Knight', price:180, body:'#1f472f', trim:'#57c77a', skin:'#cfa982' },
   { id:'azure', name:'Azure Witness', price:240, body:'#233d73', trim:'#7aa7ff', skin:'#cfa982' },
   { id:'gilded', name:'Gilded Champion', price:500, body:'#4d3c17', trim:'#f1c75b', skin:'#d5c596' },
-  { id:'void', name:'Voidwalker', price:800, body:'#17141f', trim:'#9b74ff', skin:'#77718f' }
+  { id:'void', name:'Voidwalker', price:800, body:'#17141f', trim:'#9b74ff', skin:'#77718f' },
+  // Exploration-exclusive cosmetic: not sold for Gold (secret:true hides it from the wardrobe shop).
+  // Granted only by finding the hidden Unrecorded Vault off the parish path — rewarded curiosity,
+  // never power, never purchasable. See AREA1_LORE 'unrecorded-vault' + index.html lore wiring.
+  { id:'unrecorded', name:'Unrecorded Pilgrim', price:0, secret:true, body:'#2b2622', trim:'#b9a06a', skin:'#bfae8c' }
+];
+
+/* ---- Area 1 — off-path lore (issue #25, world & content lane) ------------- */
+/* Rewarded curiosity for Gracefall Parish: discoveries sit OFF the q01-q05 quest corridor
+   (which clusters near y in [-140,140]). Each records a lore fragment in the player's Codex;
+   none gate quests or grant power. The hidden 'unrecorded-vault' dead-end (reward:'unrecorded')
+   grants the exploration-only cosmetic. The index.html host consumes this via LORE markers,
+   nearestLore()/discoverLore() and the Codex counter. */
+const AREA1_LORE=[
+  { id:'pilgrim-cairn', title:'The Pilgrim Cairn', x:240, y:-320, kind:'cairn',
+    lines:[
+      'A cairn of unpaid debtors, stacked north of the parish where no road leads.',
+      'Scratched into the topmost stone: "We walked here to NOT be recorded. The Chainwell found us anyway."'
+    ] },
+  { id:'drowned-ledger', title:'The Drowned Ledger', x:520, y:320, kind:'ledger',
+    lines:[
+      'A ledger-book bloats in the southern marsh, ink running into the reeds.',
+      'The last legible line: "Balance forgiven — see Mother Tallow." The entry below it has been burned away.'
+    ] },
+  { id:'west-milestone', title:'The West Milestone', x:-380, y:120, kind:'milestone',
+    lines:[
+      'A milestone at the dead end of the western track. The mileage was chiselled off.',
+      'Beneath, a newer hand: "Hearthlight is not the first parish. Ask the Archivist what stood here before."'
+    ] },
+  // Hidden dead-end. Concealed NW of the chapel behind the bramble wall; grants the cosmetic.
+  { id:'unrecorded-vault', title:'The Unrecorded Vault', x:-600, y:-300, kind:'vault', reward:'unrecorded',
+    lines:[
+      'A collapsed strong-room the Chainwell never indexed. Dust here has never been counted.',
+      'In a niche: a pilgrim\'s ash-grey shroud, unworn, unrecorded. You take it — the ledger does not notice.',
+      'COSMETIC UNLOCKED: Unrecorded Pilgrim (wardrobe, B).'
+    ] }
+];
+
+/* ---- Area 1 — ledger puzzles (issue #26, world & content lane) ------------ */
+/* Q-N3: the old "puzzles" were puzzle SHAPE — press E N times in any order. These two require
+   deliberate thought tied to the bureaucratic/ledger theme: read the clue + the inscriptions,
+   DEDUCE the activation order, and stamp the stones in that order. A wrong stamp blanks the
+   ledger (progress resets). Solving reveals a Codex fragment. `order` is the correct node-id
+   sequence and is intentionally NOT the spatial (x-sorted) order, so the clue is required to
+   solve — the host engine never reveals the order. Off the q01-q05 quest corridor; optional;
+   no power reward. Consumed by index.html nearestPuzzleTarget()/stampPuzzle()/drawPuzzles(). */
+const AREA1_PUZZLES=[
+  { id:'reconciliation', title:'The Reconciliation Yard',
+    clue:{ id:'recon-board', x:386, y:150, label:'TALLY BOARD',
+      lines:[
+        'TALLY BOARD: "The Chainwell settles the smallest debt before the great."',
+        'Stamp the ledger stones from least owed to greatest. A false tally blanks the slate.'
+      ] },
+    // amounts deliberately scrambled in space; correct order is ascending by value.
+    nodes:[
+      { id:'r-47', value:47, label:'47', x:300, y:190, inscription:'Ledger stone — debt of 47 marks.' },
+      { id:'r-8',  value:8,  label:'8',  x:470, y:250, inscription:'Ledger stone — debt of 8 marks.'  },
+      { id:'r-23', value:23, label:'23', x:320, y:262, inscription:'Ledger stone — debt of 23 marks.' },
+      { id:'r-12', value:12, label:'12', x:462, y:182, inscription:'Ledger stone — debt of 12 marks.' }
+    ],
+    order:['r-8','r-12','r-23','r-47'],
+    stamp:'The stone settles. The slate accepts the tally.',
+    wrong:'The tally does not balance — the slate blanks itself.',
+    solvedLore:[
+      'The four stones settle flush. A seam in the yard wall grinds open onto nothing — only dust.',
+      'Codex: "Reconciliation is not forgiveness. The Chainwell only wants the order right."'
+    ] },
+  { id:'debt-chain', title:'The Writ of Succession',
+    clue:{ id:'writ-board', x:-230, y:150, label:'OPENING WRIT',
+      lines:[
+        'OPENING WRIT: "Begin with Pell, who first broke faith."',
+        'Each writ names the soul its debtor owes. Follow the chain to its settled end.'
+      ] },
+    // each marker names WHO it owes; trace Pell -> Marrow -> Goss -> Vance (settled).
+    nodes:[
+      { id:'w-vance',  label:'VANCE',  x:-300, y:190, inscription:'Writ of Vance — "Vance owes no one. Settled."' },
+      { id:'w-goss',   label:'GOSS',   x:-150, y:282, inscription:'Writ of Goss — "Goss owes Vance."'    },
+      { id:'w-pell',   label:'PELL',   x:-160, y:200, inscription:'Writ of Pell — "Pell owes Marrow."'   },
+      { id:'w-marrow', label:'MARROW', x:-280, y:262, inscription:'Writ of Marrow — "Marrow owes Goss."' }
+    ],
+    order:['w-pell','w-marrow','w-goss','w-vance'],
+    stamp:'The writ is countersigned. The next debtor waits.',
+    wrong:'No writ binds these two — the chain falls slack and you must begin again.',
+    solvedLore:[
+      'The four writs braid into a single cord and burn cold. The succession is closed.',
+      'Codex: "Every debt names another. Trace far enough and you find a name that owes only the Chainwell."'
+    ] }
 ];
 
 const ASSETS={
@@ -453,8 +539,13 @@ const BOSS_SCRIPT={id:'gate-sexton-marrow',name:'Gate Sexton Marrow',beat:0.8,se
 /* Area 1 bosses as story-gated, multi-play-style encounters (bible: Gracefall Parish). */
 const TURN_SEXTON={id:'duel-sexton',name:'Gate Sexton Marrow',opponent:{name:'Gate Sexton Marrow',hp:96,attack:14,defense:2,color:'#d8b36b',sprite:'sexton'}};
 const TURN_WARDEN={id:'duel-warden',name:'Mempool Warden',opponent:{name:'Mempool Warden',hp:92,attack:13,defense:1,color:'#b88cff',sprite:'mempool'}};
-/* Mother Tallow hp = 260 is canon (DESIGN-BIBLE.md Area 1: "hp 260, dmg 22..."); matches the index.html registry. */
-const TURN_TALLOW={id:'duel-tallow',name:'Mother Tallow',opponent:{name:'Mother Tallow',hp:260,attack:18,defense:3,color:'#f1c75b',sprite:'tallow'}};
+/* Mother Tallow hp = 260 is canon (DESIGN-BIBLE.md Area 1: "hp 260, dmg 22..."); matches the index.html registry.
+   Phase 2 (smoke split): at 50% HP she sheds her waxen body and a smoke echo, becoming a dual-chain foe
+   (engine/turnbased.js resolveFoe). Both halves must be cut down; they slowly re-merge each foe turn unless
+   the hero holds the split open with Strike Both. This is the Area-1 introduction to the dual-chain mechanic
+   the Canon/Schism bosses lean on later — gentler halves and merge than the final Ledger-Bound. */
+const TURN_TALLOW={id:'duel-tallow',name:'Mother Tallow',opponent:{name:'Mother Tallow',hp:260,attack:18,defense:3,color:'#f1c75b',sprite:'tallow',
+  phase2:{threshold:0.5,aHp:72,bHp:72,aLabel:'WAXEN',bLabel:'SMOKE',aColor:'#f1c75b',bColor:'#9a8f7a',mergePerTurn:4}}};
 /* Tallow House: vertical wax-choked interior, rising lift, dripping-wax hazards — distinct from the Parish Road climb. */
 const PLAT_TALLOW_HOUSE={id:'a1-tallow-house',name:'Tallow House',width:1080,height:720,spawn:{x:60,y:616},physics:{maxRun:195,jump:445},
   platforms:[{id:'ground',x:0,y:660,w:1080,h:60,type:'solid'},{id:'shelf-a',x:90,y:580,w:130,h:12,type:'oneWay'},{id:'mid-floor',x:320,y:560,w:260,h:14,type:'solid'},{id:'wax-lift',x:510,y:510,w:110,h:14,type:'solid',vy:32,minY:400,maxY:520},{id:'shelf-b',x:120,y:460,w:160,h:12,type:'oneWay'},{id:'walkway',x:650,y:430,w:200,h:14,type:'solid'},{id:'step-a',x:200,y:360,w:120,h:14,type:'solid'},{id:'step-b',x:750,y:340,w:140,h:12,type:'oneWay'},{id:'upper',x:380,y:270,w:260,h:14,type:'solid'},{id:'altar',x:700,y:190,w:230,h:14,type:'solid'}],
@@ -705,7 +796,7 @@ const NPCS=[
 ];
 
   return {
-    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, BOSS_SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL,
+    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, BOSS_SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES,
     PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
     TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
     AREA2_TOWN, PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,

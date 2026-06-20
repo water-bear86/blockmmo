@@ -983,6 +983,35 @@ function createAccountRegistry(options = {}) {
     return { ok: true, character: clone(found.character), season: clone(season) };
   }
 
+  // Q-F7a ruling (docs/design/Q-F7a-season-window-ruling.md): a character whose window closed with
+  // mandatory tasks unfinished is 'failed' — it keeps its (non-economic) collection, cannot be sold
+  // (the cash-out gate stays earned-only), and may re-attempt next season with stats reset to zero.
+  //   mid-season       window still open
+  //   season-complete  closed + mandatory tasks finished inside the window  → sale-eligible
+  //   failed           closed + tasks unfinished, not sold                  → re-attempt next season
+  //   sold             already transferred to a buyer
+  function characterStatus(accountId, at = now(), characterId) {
+    const found = characterId ? findCharacterById(characterId) : findCurrentCharacter(accountId);
+    if (!found || found.account.id !== accountId) return accountError('unknown_character', 'Account does not own that character.');
+    const character = found.character;
+    const season = registry.seasons[character.seasonId];
+    const complete = isSeasonComplete(character, season);
+    let status;
+    if (character.sale) status = 'sold';
+    else if (isSeasonOpen(season, at)) status = 'mid-season';
+    else if (complete) status = 'season-complete';
+    else status = 'failed';
+    return {
+      ok: true,
+      status,
+      canSell: status === 'season-complete',
+      canReattempt: status === 'failed',
+      seasonComplete: complete,
+      character: clone(character),
+      season: season ? clone(season) : null,
+    };
+  }
+
   function recordCharacterSale(sellerAccountId, buyerAccountId, options = {}) {
     const at = options.at == null ? now() : Number(options.at);
     const buyer = registry.accounts[buyerAccountId];
@@ -1107,6 +1136,20 @@ function createAccountRegistry(options = {}) {
     const previous = latestCharacterBeforeSeason(account, seasonId);
     if (previous) {
       normalizeCharacterState(previous);
+      const prevSeason = registry.seasons[previous.seasonId];
+      // Q-F7a: a 'failed' previous character (window closed, tasks unfinished, never sold) re-attempts
+      // next season — it keeps its non-economic collection but its grind stats reset to zero, so
+      // failing a season is meaningfully different from completing it. A completer keeps both.
+      if (!previous.sale && !isSeasonComplete(previous, prevSeason)) {
+        return {
+          mode: 'reattempt',
+          sourceCharacterId: previous.id,
+          sourceSeasonId: previous.seasonId,
+          collection: clone(previous.collection),
+          stats: zeroStats(),
+          statsReset: true,
+        };
+      }
       return {
         mode: 'keep',
         sourceCharacterId: previous.id,
@@ -1247,6 +1290,7 @@ function createAccountRegistry(options = {}) {
     recordCharacterProgress,
     recordCharacterSale,
     canSellCharacter,
+    characterStatus,
     applyAcceptedBlock,
     accountIdForPublicKey,
   };
