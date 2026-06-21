@@ -224,7 +224,10 @@ fn sale_releases_escrow_and_flags_seller_restart() {
 
     assert_eq!(token_amount(&w.svm, &buyer_token), 1, "buyer received the NFT");
     assert_eq!(token_amount(&w.svm, &escrow_token_pda(&w.mint)), 0, "escrow released");
-    assert!(w.svm.get_account(&listing_pda(&w.mint)).is_none(), "listing closed");
+    // Anchor `close` drains lamports + zeroes the account; litesvm keeps the 0-lamport husk
+    // (a real validator purges it), so "closed" == gone-or-zero-lamports.
+    let listing_after = w.svm.get_account(&listing_pda(&w.mint));
+    assert!(listing_after.map_or(true, |a| a.lamports == 0), "listing closed");
 
     let cs: runechain_character::CharacterState = load(&w.svm, &character_pda(&w.mint));
     assert!(cs.must_restart, "F7.3 rule 3: seller flagged to restart at zero");
