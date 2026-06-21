@@ -1,0 +1,22 @@
+# Integration tests for the RUNECHAIN programs (PRD F6 / F7), run in-process against the
+# COMPILED .so via litesvm — no external validator, so they run anywhere `cargo test` does.
+#
+# Detached from the main workspace (own [workspace] table) so `cargo build-sbf` in ../ never
+# pulls these host-only test deps into the on-chain build. The program crates are depended on
+# with `no-entrypoint` so two program entrypoints don't link into one test binary; only their
+# generated `instruction::` / `accounts::` modules and `ID` are used to build transactions.
+[package]
+name = "runechain-contracts-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dev-dependencies]
+litesvm = "0.6"
+solana-sdk = "2"
+spl-token = "7"
+anchor-lang = "0.31.1"
+runechain-settlement = { path = "../programs/runechain-settlement", features = ["no-entrypoint"] }
+runechain-character = { path = "../programs/runechain-character", features = ["no-entrypoint"] }
+
+[workspace]
