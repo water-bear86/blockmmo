@@ -238,10 +238,9 @@ const BOSS_SIGILS = {
 /* ---- Area 3 finale — the Auditor's three endings (issue #24/#5) ----------- */
 /* The Auditor cannot be killed; the climax is a CHOICE of three permanent, account-bound
    endings (A/B/C), not combat. Per the ratified scope ruling the ending is FLAG-BASED and the
-   ledger is PRESERVED — no on-chain RUNE wipe or relic destruction (on-chain recordEnding +
-   server relay are deferred). Choice C ('amend') is the ONLY path to the Amended Record sigil
-   and the only one that unlocks the endgame. The index.html host consumes this via
-   openAuditorChoice()/resolveAuditorChoice() and records progress.ending. */
+   ledger is PRESERVED — no on-chain RUNE wipe or relic destruction. Choice C ('amend') is the
+   ONLY path to the Amended Record sigil and the only one that unlocks the endgame. The server
+   persists the public account-bound ending; index.html mirrors it in progress.ending. */
 const AUDITOR_ENDINGS = [
   { id:'A', key:'comply', title:'Ending A — Reconciled', label:'Sign the ledger as the Auditor wrote it',
     lines:[
@@ -836,7 +835,7 @@ const NPCS=[
 ];
 
   return {
-    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, BOSS_SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES, WORLD_PORTALS,
+    ECON, ENEMY_REWARDS, STORY, RELICS, LEVELING, SIGILS, BOSS_SIGILS, AUDITOR_ENDINGS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES, WORLD_PORTALS,
     PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
     TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
     AREA2_TOWN, PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,
