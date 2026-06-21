@@ -510,9 +510,16 @@ function createRealmServer(options = {}) {
       return sendPvpError(client, duel.id, 'turn_submission_replayed', 'PvP actor turn has already been accepted.');
     }
 
-    duel.seenSubmissionIds.add(submissionKey);
-    duel.seenActorTurns.add(actorTurnKey);
-    return resolvePvpTurn(duel, client.id, submittedTurn, action, submissionId);
+    const result = resolvePvpTurn(duel, client.id, submittedTurn, action, submissionId);
+    // Only consume the replay/turn slot once the action actually resolved. A rejected
+    // submission (e.g. Focus with insufficient stamina, server.js resolvePvpTurn) must NOT
+    // lock the actor out of the turn — otherwise they could never submit a valid action for
+    // this turn and would lose on the turn timeout.
+    if (result && result.ok) {
+      duel.seenSubmissionIds.add(submissionKey);
+      duel.seenActorTurns.add(actorTurnKey);
+    }
+    return result;
   }
 
   function resolvePvpTurn(duel, actorPeerId, submittedTurn, action, submissionId) {

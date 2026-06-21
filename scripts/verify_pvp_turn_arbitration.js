@@ -259,6 +259,55 @@ assert.strictEqual(bobTimeout.loser, bobAccount.peerId, 'current actor loses on 
 assert.strictEqual(bobTimeout.winner, aliceAccount.peerId);
 assert.strictEqual(readMessages(observer).length, 0, 'timeout result is participant-only');
 
+// --- Regression: a rejected Focus (insufficient stamina) must NOT consume the actor's turn. ---
+// Previously acceptPvpTurnSubmission committed the replay/turn markers BEFORE resolving, so an
+// insufficient-stamina Focus left the turn marked-as-seen with no state change: the actor could
+// never submit a valid action for that turn and lost on the timeout. Give both high vigor so
+// nobody dies during the drain; Bob guards so Alice takes no damage.
+alice.character = { ...alice.character, stats: { ...(alice.character.stats || {}), vigor: 80 } };
+bob.character = { ...bob.character, stats: { ...(bob.character.stats || {}), vigor: 80 } };
+const focusDuel = challengeAndAccept(realm, alice, bob, aliceAccount, bobAccount, 'focus-lockout');
+readMessages(observer);
+
+// Drain Alice from 100 stamina to 0 with 5 Focuses (cost 20 each); Bob guards between turns.
+for (let i = 0; i < 5; i += 1) {
+  const aliceTurnNo = 1 + i * 2;
+  const focusOk = realm.handleParsedMessage(alice, {
+    t: 'rc:pvp:turn:submit', duelId: focusDuel.duelId, turn: aliceTurnNo, action: 'focus',
+    submissionId: 'alice-focus-' + i,
+  });
+  assert.strictEqual(focusOk.ok, true, 'focus ' + i + ' should resolve while stamina remains');
+  readMessages(alice); readMessages(bob);
+  const guardOk = realm.handleParsedMessage(bob, {
+    t: 'rc:pvp:turn:submit', duelId: focusDuel.duelId, turn: aliceTurnNo + 1, action: 'guard',
+    submissionId: 'bob-guard-' + i,
+  });
+  assert.strictEqual(guardOk.ok, true, 'bob guard ' + i + ' should resolve');
+  readMessages(alice); readMessages(bob);
+}
+
+// Turn 11 is Alice's and she now has 0 stamina: a Focus must be rejected for insufficient stamina...
+const lockoutTurn = 11;
+const focusFail = realm.handleParsedMessage(alice, {
+  t: 'rc:pvp:turn:submit', duelId: focusDuel.duelId, turn: lockoutTurn, action: 'focus',
+  submissionId: 'alice-focus-fail',
+});
+assertRejected(focusFail, 'pvp_insufficient_stamina');
+assert.strictEqual(readMessages(alice)[0].error.code, 'pvp_insufficient_stamina');
+assert.strictEqual(readMessages(bob).length, 0, 'a rejected focus must not emit a turn state');
+
+// ...but it must NOT have consumed the turn — Alice can still submit a valid action for turn 11.
+const recover = realm.handleParsedMessage(alice, {
+  t: 'rc:pvp:turn:submit', duelId: focusDuel.duelId, turn: lockoutTurn, action: 'strike',
+  submissionId: 'alice-strike-recover',
+});
+assert.strictEqual(recover.ok, true, 'a rejected Focus must not lock the actor out of its turn (regression)');
+const recoverTurn = readMessages(alice)[0];
+assert.strictEqual(recoverTurn.t, 'rc:pvp:turn:state');
+assert.strictEqual(recoverTurn.turn, lockoutTurn);
+assert.strictEqual(recoverTurn.nextTurn, lockoutTurn + 1);
+readMessages(bob); readMessages(observer);
+
 realm.close();
 fs.rmSync(tempDir, { recursive: true, force: true });
 console.log('pvp turn arbitration verification passed');
