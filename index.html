@@ -345,13 +345,21 @@ const Story=(function(){
   function say(lines){ (lines||[]).forEach(t=>log('<b style="color:#f1c75b">Story:</b> '+esc(t))); }
   function updateHud(){
     const q=quest(), st=step();
-    const qt=document.getElementById('qtitle'), qo=document.getElementById('qobj');
+    const qt=UI.qtitle, qo=UI.qobj;
     if(!qt||!qo)return;
-    if(!q){ qt.textContent='Free Roam'; qo.textContent='Hunt, mine RUNE, and build the economy.'; return; }
-    qt.textContent=q.title;
-    if(!st){ qo.textContent='Quest complete. Bring the next storyline drop.'; return; }
+    if(!q){
+      if(qt.textContent!=='Free Roam') qt.textContent='Free Roam';
+      if(qo.textContent!=='Hunt, mine RUNE, and build the economy.') qo.textContent='Hunt, mine RUNE, and build the economy.';
+      return;
+    }
+    if(qt.textContent!==q.title) qt.textContent=q.title;
+    if(!st){
+      if(qo.textContent!=='Quest complete. Bring the next storyline drop.') qo.textContent='Quest complete. Bring the next storyline drop.';
+      return;
+    }
     const need=st.done&&st.done.count;
-    qo.textContent=need?`${st.text} (${Math.min(state.stepCount,need)}/${need})`:st.text;
+    const nextObj=need?`${st.text} (${Math.min(state.stepCount,need)}/${need})`:st.text;
+    if(qo.textContent!==nextObj) qo.textContent=nextObj;
   }
   function matches(done,type,payload){
     if(!done||done.event!==type)return false;
@@ -2239,76 +2247,147 @@ function draw(){
 }
 
 /* ------------------------------- HUD ------------------------------------ */
-const hpFill=document.querySelector('#hp>i'), staFill=document.querySelector('#sta>i');
-const hpEl=document.getElementById('hp'), staEl=document.getElementById('sta');
+// Bolt Optimization: Cache high-frequency DOM elements to avoid redundant lookups in the 60fps loop.
+const UI = {
+  hpFill: document.querySelector('#hp>i'),
+  staFill: document.querySelector('#sta>i'),
+  hp: document.getElementById('hp'),
+  sta: document.getElementById('sta'),
+  lvl: document.getElementById('lvl'),
+  sVgr: document.getElementById('sVgr'),
+  sEnd: document.getElementById('sEnd'),
+  sStr: document.getElementById('sStr'),
+  sDmg: document.getElementById('sDmg'),
+  runes: document.getElementById('runes'),
+  qtitle: document.getElementById('qtitle'),
+  qobj: document.getElementById('qobj'),
+  bal: document.getElementById('bal'),
+  pend: document.getElementById('pend'),
+  gold: document.getElementById('gold'),
+  height: document.getElementById('height'),
+  diff: document.getElementById('diff'),
+  hr: document.getElementById('hr'),
+  burned: document.getElementById('burned'),
+  marketingpool: document.getElementById('marketingpool'),
+  opspool: document.getElementById('opspool'),
+  chain: document.getElementById('chain'),
+  prompt: document.getElementById('prompt'),
+  bossbar: document.getElementById('bossbar'),
+  bossname: document.getElementById('bossname'),
+  bossfill: document.getElementById('bossfill')
+};
+const hpFill=UI.hpFill, staFill=UI.staFill;
+const hpEl=UI.hp, staEl=UI.sta;
+
 function log(html){
   const l=document.getElementById('log'), d=document.createElement('div');
   d.innerHTML=html; l.appendChild(d);
   while(l.children.length>5)l.removeChild(l.firstChild);
   setTimeout(()=>{ if(d.parentNode)d.remove(); },5200);
 }
+// Bolt Optimization: dirty-checking to avoid redundant DOM operations in 60fps loops.
+const HUD_STATE = { lastRunes: '', lastPrompt: '', lastChain: '', lastBoss: '' };
+
 function updateHud(){
   const hpPct=player.hp/player.maxHp, staPct=player.sta/player.maxSta;
-  hpFill.style.width=(hpPct*100)+'%';
-  staFill.style.width=(staPct*100)+'%';
-  hpEl.setAttribute('aria-valuenow', Math.round(player.hp));
-  hpEl.setAttribute('aria-valuemax', Math.round(player.maxHp));
-  staEl.setAttribute('aria-valuenow', Math.round(player.sta));
-  staEl.setAttribute('aria-valuemax', Math.round(player.maxSta));
-  hpEl.classList.toggle('low-hp', hpPct < 0.25);
-  document.getElementById('lvl').textContent=player.level;
-  document.getElementById('sVgr').textContent=player.vigor;
-  document.getElementById('sEnd').textContent=player.endurance;
-  document.getElementById('sStr').textContent=player.strength;
-  document.getElementById('sDmg').textContent=player.dmg;
+  const nextHpW=(hpPct*100)+'%', nextStaW=(staPct*100)+'%';
+  if(hpFill.style.width!==nextHpW) hpFill.style.width=nextHpW;
+  if(staFill.style.width!==nextStaW) staFill.style.width=nextStaW;
+
+  const nextHpVal=Math.round(player.hp), nextHpMax=Math.round(player.maxHp);
+  if(hpEl.getAttribute('aria-valuenow')!==String(nextHpVal)) hpEl.setAttribute('aria-valuenow', nextHpVal);
+  if(hpEl.getAttribute('aria-valuemax')!==String(nextHpMax)) hpEl.setAttribute('aria-valuemax', nextHpMax);
+
+  const nextStaVal=Math.round(player.sta), nextStaMax=Math.round(player.maxSta);
+  if(staEl.getAttribute('aria-valuenow')!==String(nextStaVal)) staEl.setAttribute('aria-valuenow', nextStaVal);
+  if(staEl.getAttribute('aria-valuemax')!==String(nextStaMax)) staEl.setAttribute('aria-valuemax', nextStaMax);
+
+  const lowHp=hpPct < 0.25;
+  if(hpEl.classList.contains('low-hp')!==lowHp) hpEl.classList.toggle('low-hp', lowHp);
+
+  if(UI.lvl.textContent!==String(player.level)) UI.lvl.textContent=player.level;
+  if(UI.sVgr.textContent!==String(player.vigor)) UI.sVgr.textContent=player.vigor;
+  if(UI.sEnd.textContent!==String(player.endurance)) UI.sEnd.textContent=player.endurance;
+  if(UI.sStr.textContent!==String(player.strength)) UI.sStr.textContent=player.strength;
+  if(UI.sDmg.textContent!==String(player.dmg)) UI.sDmg.textContent=player.dmg;
+
   const grs=Chain.greatRunesOf(valueAddress());
-  document.getElementById('runes').textContent=grs.length?'Boss Sigil: '+grs.map(g=>g.name).join(', '):'';
+  const nextRunes=grs.length?'Boss Sigil: '+grs.map(g=>g.name).join(', '):'';
+  if(HUD_STATE.lastRunes!==nextRunes){
+    UI.runes.textContent=nextRunes;
+    HUD_STATE.lastRunes=nextRunes;
+  }
+
   Story.updateHud();
   updateWallet();
-  const prompt=document.getElementById('prompt');
-  if(Dialogue.isOpen()){ prompt.classList.remove('on'); }
+
+  const prompt=UI.prompt;
+  let nextPrompt='';
+  if(Dialogue.isOpen()){ nextPrompt=''; }
   else{
-  const bossEnc=state.mode==='town'?nearestBossEncounter():null;
-  const near=nearestInteractable();
-  const entry=state.mode==='town'?nearestWorldEntry():null;
-  const lore=state.mode==='town'?nearestLore():null;
-  const pz=state.mode==='town'?nearestPuzzleTarget():null;
-  const portal=state.mode==='town'?nearestPortal():null;
-  const npc=state.mode==='town'?nearestNpc():null;
-  if(bossEnc){ prompt.style.display='block'; prompt.innerHTML='Press <b>F</b> to face <b>'+esc(bossEnc.type.name)+'</b>'; }
-  else if(near){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> - '+esc(near.label); }
-  else if(entry){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to enter <b>'+esc(entry.title||entry.label)+'</b>'; }
-  else if(lore){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to examine <b>'+esc(lore.title)+'</b>'; }
-  else if(pz){ prompt.style.display='block'; prompt.innerHTML=pz.clue?('Press <b>E</b> to read the <b>'+esc(pz.clue.label)+'</b>'):('Press <b>E</b> to stamp <b>'+esc(pz.node.label)+'</b>'); }
-  else if(portal){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to descend into <b>'+esc(portal.label)+'</b>'; }
-  else if(npc){ prompt.style.display='block'; prompt.innerHTML='Press <b>E</b> to speak with <b>'+esc(npc.name)+'</b>'; }
-  else if(nearGrace()&&!state.graceOpen&&!player.dead){ prompt.style.display='block'; prompt.innerHTML='Safe Hearthlight - press <b>G</b> to rest, level, forge'; }
-  else if(player.lock&&!player.lock.dead){ prompt.style.display='block'; prompt.innerHTML='Target: <b>'+esc(player.lock.type.name)+'</b>'; }
-  else prompt.style.display='none';
+    const bossEnc=state.mode==='town'?nearestBossEncounter():null;
+    const near=nearestInteractable();
+    const entry=state.mode==='town'?nearestWorldEntry():null;
+    const lore=state.mode==='town'?nearestLore():null;
+    const pz=state.mode==='town'?nearestPuzzleTarget():null;
+    const portal=state.mode==='town'?nearestPortal():null;
+    const npc=state.mode==='town'?nearestNpc():null;
+    if(bossEnc){ nextPrompt='Press <b>F</b> to face <b>'+esc(bossEnc.type.name)+'</b>'; }
+    else if(near){ nextPrompt='Press <b>E</b> - '+esc(near.label); }
+    else if(entry){ nextPrompt='Press <b>E</b> to enter <b>'+esc(entry.title||entry.label)+'</b>'; }
+    else if(lore){ nextPrompt='Press <b>E</b> to examine <b>'+esc(lore.title)+'</b>'; }
+    else if(pz){ nextPrompt=pz.clue?('Press <b>E</b> to read the <b>'+esc(pz.clue.label)+'</b>'):('Press <b>E</b> to stamp <b>'+esc(pz.node.label)+'</b>'); }
+    else if(portal){ nextPrompt='Press <b>E</b> to descend into <b>'+esc(portal.label)+'</b>'; }
+    else if(npc){ nextPrompt='Press <b>E</b> to speak with <b>'+esc(npc.name)+'</b>'; }
+    else if(nearGrace()&&!state.graceOpen&&!player.dead){ nextPrompt='Safe Hearthlight - press <b>G</b> to rest, level, forge'; }
+    else if(player.lock&&!player.lock.dead){ nextPrompt='Target: <b>'+esc(player.lock.type.name)+'</b>'; }
   }
+
+  if(HUD_STATE.lastPrompt!==nextPrompt){
+    if(nextPrompt){ prompt.classList.add('on'); prompt.style.display='block'; prompt.innerHTML=nextPrompt; }
+    else { prompt.classList.remove('on'); prompt.style.display='none'; }
+    HUD_STATE.lastPrompt=nextPrompt;
+  }
+
   const boss=enemies.find(e=>e.type.boss&&!e.dead);
-  const box=document.getElementById('bossbar');
+  const box=UI.bossbar;
   if(boss&&(boss.hp<boss.maxHp||dist(boss,player)<130||player.lock===boss)){
-    box.style.display='block';
-    document.getElementById('bossname').textContent=boss.type.name;
-    document.getElementById('bossfill').style.width=(boss.hp/boss.maxHp*100)+'%';
-  } else box.style.display='none';
+    if(box.style.display!=='block') box.style.display='block';
+    if(UI.bossname.textContent!==boss.type.name) UI.bossname.textContent=boss.type.name;
+    const nextBossW=(boss.hp/boss.maxHp*100)+'%';
+    if(UI.bossfill.style.width!==nextBossW) UI.bossfill.style.width=nextBossW;
+  } else {
+    if(box.style.display!=='none') box.style.display='none';
+  }
 }
 function updateWallet(){
-  document.getElementById('bal').textContent=Chain.balanceOf(valueAddress()).toFixed(2);
-  document.getElementById('pend').textContent=Chain.pendingCredit(valueAddress()).toFixed(2);
-  document.getElementById('gold').textContent=Econ.goldSpendable(valueAddress()).toFixed(2);
-  document.getElementById('height').textContent=Chain.chain.length-1;
-  document.getElementById('diff').textContent=Chain.DIFFICULTY+' nibbles';
-  document.getElementById('hr').textContent=Chain.hashrate.toLocaleString()+' H/s';
-  document.getElementById('burned').textContent=Econ.solTally(ECON.BURN_ADDR).toFixed(4);
-  document.getElementById('marketingpool').textContent=Econ.solTally(ECON.MARKETING_ADDR).toFixed(4);
-  document.getElementById('opspool').textContent=Econ.solTally(ECON.OPS_ADDR).toFixed(4);
+  const b=Chain.balanceOf(valueAddress()).toFixed(2);
+  if(UI.bal.textContent!==b) UI.bal.textContent=b;
+  const p=Chain.pendingCredit(valueAddress()).toFixed(2);
+  if(UI.pend.textContent!==p) UI.pend.textContent=p;
+  const g=Econ.goldSpendable(valueAddress()).toFixed(2);
+  if(UI.gold.textContent!==g) UI.gold.textContent=g;
+  const h=String(Chain.chain.length-1);
+  if(UI.height.textContent!==h) UI.height.textContent=h;
+  const d=Chain.DIFFICULTY+' nibbles';
+  if(UI.diff.textContent!==d) UI.diff.textContent=d;
+  const hr=Chain.hashrate.toLocaleString()+' H/s';
+  if(UI.hr.textContent!==hr) UI.hr.textContent=hr;
+  const br=Econ.solTally(ECON.BURN_ADDR).toFixed(4);
+  if(UI.burned.textContent!==br) UI.burned.textContent=br;
+  const mp=Econ.solTally(ECON.MARKETING_ADDR).toFixed(4);
+  if(UI.marketingpool.textContent!==mp) UI.marketingpool.textContent=mp;
+  const op=Econ.solTally(ECON.OPS_ADDR).toFixed(4);
+  if(UI.opspool.textContent!==op) UI.opspool.textContent=op;
+
   updateWalletConnUI();
   let html='';
   if(Chain.mining)html+='<div class="blk mining">#'+Chain.mining.index+' mining - nonce '+Chain.mining.nonce.toLocaleString()+'</div>';
   for(const b of Chain.chain.slice(-5).reverse())html+='<div class="blk">#'+b.index+' '+b.hash.slice(0,12)+' - '+(b.txs||[]).length+' tx</div>';
-  document.getElementById('chain').innerHTML=html;
+  if(HUD_STATE.lastChain!==html){
+    UI.chain.innerHTML=html;
+    HUD_STATE.lastChain=html;
+  }
 }
 function startGame(){
   if(state.started)return;
