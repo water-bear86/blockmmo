@@ -246,7 +246,7 @@
 const Content = window.RUNECHAIN_CONTENT;
 if (!Content || !window.RUNECHAIN_SHA256 || !window.RUNECHAIN_CHAIN || !window.RUNECHAIN_ACCOUNT) throw new Error('RUNECHAIN core scripts failed to load');
 const {
-  ECON, STORY, RELICS, SIGILS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES, WORLD_PORTALS,
+  ECON, STORY, RELICS, SIGILS, AUDITOR_ENDINGS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES, WORLD_PORTALS,
   PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
   TURN_SEXTON, TURN_WARDEN, TURN_TALLOW, PLAT_TALLOW_HOUSE, BATTLE_TALLOW_ECHOES, AREA1_ENCOUNTERS,
   PLAT_DEBT_MINES, BATTLE_LEDGER_VAULTS, TURN_FOREMAN, TURN_BIFURCATED, TURN_LEDGERBOUND, AREA2_ENCOUNTERS,
@@ -723,6 +723,7 @@ function resolveAuditorChoice(id){
     Story.event('greatRune',{rune:rune.id});
   }
   if(ending.endgame){ progress.endgameUnlocked=true; log('<b style="color:#f1c75b">The Amendment endgame is open</b> — contestation echoes await.'); }
+  Net.recordAuditorEnding(ending.id);
   // Resolve (not kill) the Auditor: it leaves the field without a combat death / unconditional mint.
   if(auditorEnemy){ auditorEnemy.dead=true; auditorEnemy.deathT=1.2; }
   Story.event('ending',{choice:ending.id}); // completes q13 (done.event==='ending')
@@ -1174,6 +1175,13 @@ function lootFlash(html){
 }
 function flashBar(id){ const el=document.getElementById(id); el.style.filter='brightness(1.9)'; setTimeout(()=>el.style.filter='',140); }
 
+function applyAuditorEndingRecord(record){
+  if(!record||!record.id)return false;
+  progress.ending=record.id;
+  progress.endgameUnlocked=!!record.endgame||!!progress.endgameUnlocked;
+  return true;
+}
+
 /* ----------------------------- Networking ------------------------------- */
 const Net=(function(){
   let ws=null, connected=false, accountReady=false, accountCredential=null, id=Math.random().toString(36).slice(2,8), sendTimer=0, activeWork=null, submittedWork=null, awaitingWork=false, pendingSource=null;
@@ -1262,6 +1270,7 @@ const Net=(function(){
           player.accountId=m.accountId||accountCredential.accountId||null;
           player.characterId=character.id||null;
           player.address=character.address||player.characterId||player.name;
+          applyAuditorEndingRecord(character.auditorEnding);
           accountReady=true;
           log('Character bound for this season: <b>'+esc(character.name||player.name)+'</b>.');
           updateHud();
@@ -1273,14 +1282,23 @@ const Net=(function(){
           closeForAccountError('Realm account rejected: '+esc(code||'unknown'));
           return;
         }
+        if(m.t==='auditor:ending'){
+          applyAuditorEndingRecord(m.ending);
+          updateHud();
+          updatePeers();
+        }
+        if(m.t==='auditor:ending:error'){
+          const code=m.error&&m.error.code;
+          log('The Auditor rejects the record update: '+esc(code||'unknown'));
+        }
         if(m.t==='state'&&m.id!==id){
           let r=remotes[m.id];
-          if(!r){ r={id:m.id,name:m.name||'Recorded',x:m.x||0,y:m.z||0,tx:m.x||0,ty:m.z||0,skin:m.skin||'tarnished',moving:false,lastSeen:Date.now()}; remotes[m.id]=r; updatePeers(); }
-          r.tx=m.x||0; r.ty=m.z||0; r.skin=m.skin||r.skin; r.moving=!!m.moving; r.dir=m.yaw||0; r.lastSeen=Date.now();
           if(!r){ r={id:m.id,name:m.name||'Recorded',x:m.x||0,y:m.z||0,tx:m.x||0,ty:m.z||0,skin:m.skin||'tarnished',moving:false,mode:m.mode||'town',encounter:m.encounter||null}; remotes[m.id]=r; updatePeers(); }
           const oldMode=r.mode, oldEncounter=r.encounter;
-          r.tx=m.x||0; r.ty=m.z||0; r.skin=m.skin||r.skin; r.moving=!!m.moving; r.dir=m.yaw||0; r.mode=m.mode||'town'; r.encounter=m.encounter||null;
-          if(oldMode!==r.mode||oldEncounter!==r.encounter)updatePeers();
+          const oldEnding=r.auditorEnding&&r.auditorEnding.id;
+          r.tx=m.x||0; r.ty=m.z||0; r.skin=m.skin||r.skin; r.moving=!!m.moving; r.dir=m.yaw||0; r.lastSeen=Date.now(); r.mode=m.mode||'town'; r.encounter=m.encounter||null;
+          r.auditorEnding=m.auditorEnding||null;
+          if(oldMode!==r.mode||oldEncounter!==r.encounter||oldEnding!==(r.auditorEnding&&r.auditorEnding.id))updatePeers();
         }
         if(m.t&&/^rc:pvp:/.test(m.t))emitGameMessage(m);
         if(m.t==='leave'){ delete remotes[m.id]; updatePeers(); }
@@ -1344,6 +1362,11 @@ const Net=(function(){
     if(accountReady)requestNextRewardWork();
     return true;
   }
+  function recordAuditorEnding(endingId){
+    if(!connected||!accountReady||!ws||ws.readyState!==1)return false;
+    ws.send(JSON.stringify({t:'auditor:ending',ending:endingId}));
+    return true;
+  }
   function requestNextRewardWork(){
     if(!connected||!accountReady||!ws||ws.readyState!==1||awaitingWork||activeWork||submittedWork)return;
     pendingSource=rewardQueue.shift()||null;
@@ -1377,9 +1400,9 @@ const Net=(function(){
     const me=document.createElement('div'); me.className='peerline'; me.innerHTML='<span class="dot '+(state.mode==='town'?'':'encounter')+'"></span>'+esc(player.name)+' <span style="color:#7d776b">(you)</span><span class="peerstate">'+esc(meMode==='town'?'town':'in '+meMode)+'</span>'; el.appendChild(me);
     const rs=Object.values(remotes);
     if(!connected&&!rs.length){ const d=document.createElement('div'); d.className='peerline'; d.innerHTML='<span class="dot local"></span>Solo mode'; el.appendChild(d); return; }
-    for(const r of rs){ const d=document.createElement('div'); d.className='peerline'; const inEncounter=r.mode&&r.mode!=='town'; d.innerHTML='<span class="dot '+(inEncounter?'encounter':'')+'"></span>'+esc(r.name)+'<span class="peerstate">'+esc(inEncounter?'in '+(r.encounter||'encounter'):'town')+'</span>'; el.appendChild(d); }
+    for(const r of rs){ const d=document.createElement('div'); d.className='peerline'; const inEncounter=r.mode&&r.mode!=='town'; const ending=r.auditorEnding&&r.auditorEnding.id?' · Ending '+r.auditorEnding.id:''; d.innerHTML='<span class="dot '+(inEncounter?'encounter':'')+'"></span>'+esc(r.name)+esc(ending)+'<span class="peerstate">'+esc(inEncounter?'in '+(r.encounter||'encounter'):'town')+'</span>'; el.appendChild(d); }
   }
-  return {connect,tick,mineAuthorized,requestRuneReward,sendGameMessage,onGameMessage,updatePeers,get connected(){return connected;},get authenticated(){return accountReady;}};
+  return {connect,tick,mineAuthorized,requestRuneReward,recordAuditorEnding,sendGameMessage,onGameMessage,updatePeers,get connected(){return connected;},get authenticated(){return accountReady;}};
 })();
 window.Net=Net;
 

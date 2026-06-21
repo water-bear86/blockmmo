@@ -22,12 +22,13 @@ const {
   validateBlockCandidate,
   validateChain,
 } = require('./game/chain.js');
-const { ENEMY_REWARDS, STORY, RELICS, LEVELING, BOSS_SIGILS } = require('./game/content.js');
+const { ENEMY_REWARDS, STORY, RELICS, LEVELING, BOSS_SIGILS, AUDITOR_ENDINGS } = require('./game/content.js');
 
 const DEFAULT_PORT = process.env.PORT || 8080;
 const DEFAULT_SEASON_ID = 'preseason-1';
 const ACCOUNT_CREDENTIAL_TYPE = 'browser-p256-v1';
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'; // WebSocket magic string
+const AUDITOR_ENDING_BY_ID = new Map((AUDITOR_ENDINGS || []).map((ending) => [ending.id, ending]));
 const AUTHORITY_TIERS = Object.freeze({
   authoritative: Object.freeze([
     'economy-state',
@@ -106,7 +107,7 @@ function createRealmServer(options = {}) {
   const settledMiningCandidates = new Map();
   const validatedOutcomes = new Set();
   const pvpDuels = new Map();
-  const accountRegistry = options.accountRegistry || createAccountRegistry({ accountsFile, seasonId, now });
+  const accountRegistry = options.accountRegistry || createAccountRegistry({ accountsFile, season: seasonConfig, now });
   let saveTimer = null;
   let sweepInterval = null;
   let masterChain = loadLedger();
@@ -238,6 +239,11 @@ function createRealmServer(options = {}) {
         if (!account.ok) return account;
         return issueValidatedOutcomeMiningWork(client, message.outcome);
       }
+      case 'auditor:ending': {
+        const account = requireAccount(client);
+        if (!account.ok) return account;
+        return recordAuditorEndingForClient(client, message);
+      }
       case 'mine:submit': {
         const account = requireAccount(client);
         if (!account.ok) return account;
@@ -327,7 +333,7 @@ function createRealmServer(options = {}) {
   }
 
   function canonicalStateMessage(client, message) {
-    return {
+    const state = {
       t: 'state',
       id: client.id,
       characterId: client.character.id,
@@ -339,6 +345,20 @@ function createRealmServer(options = {}) {
       yaw: finiteNumber(message.yaw),
       moving: !!message.moving,
     };
+    const ending = publicAuditorEnding(client.character);
+    if (ending) state.auditorEnding = ending;
+    return state;
+  }
+
+  function recordAuditorEndingForClient(client, message) {
+    const result = accountRegistry.recordAuditorEnding(client.accountId, message.ending || message.id || message.choice);
+    if (!result.ok) {
+      send(client, { t: 'auditor:ending:error', error: result.error });
+      return result;
+    }
+    client.character = result.character;
+    send(client, { t: 'auditor:ending', ending: result.ending, character: result.character });
+    return result;
   }
 
   function issuePvpChallenge(client, message) {
@@ -1411,6 +1431,38 @@ function createAccountRegistry(options = {}) {
     return { ok: true, character: clone(found.character) };
   }
 
+  function recordAuditorEnding(accountId, endingId, at = now()) {
+    const found = findCurrentCharacter(accountId);
+    if (!found) return accountError('unknown_character', 'Account has no character for this season.');
+    const ending = resolveAuditorEnding(endingId);
+    if (!ending) return accountError('invalid_auditor_ending', 'Auditor ending must be A, B, or C.');
+
+    normalizeCharacterState(found.character);
+    if (found.character.auditorEnding) {
+      if (found.character.auditorEnding.id !== ending.id) {
+        return accountError('auditor_ending_locked', 'Auditor ending is permanent for this account-bound character.');
+      }
+      return {
+        ok: true,
+        ending: publicAuditorEnding(found.character),
+        character: clone(found.character),
+        alreadyRecorded: true,
+      };
+    }
+
+    found.character.auditorEnding = createAuditorEndingRecord(ending, at);
+    found.character.endgameUnlocked = !!ending.endgame;
+    if (ending.sigil) mergeCollection(found.character.collection, { sigils: [ending.sigil] });
+    found.character.lastSeenAt = at;
+    saveRegistry();
+    return {
+      ok: true,
+      ending: publicAuditorEnding(found.character),
+      character: clone(found.character),
+      alreadyRecorded: false,
+    };
+  }
+
   function getCharacterState(accountId, idSeason = seasonId) {
     const account = registry.accounts[accountId];
     if (!account || !account.characters || !account.characters[idSeason]) {
@@ -1548,6 +1600,8 @@ function createAccountRegistry(options = {}) {
       mandatoryTasks: {},
       collection: clone(carry.collection || emptyCollection()),
       stats: clone(carry.stats || zeroStats()),
+      auditorEnding: null,
+      endgameUnlocked: false,
       carry: {
         mode: carry.mode,
         sourceCharacterId: carry.sourceCharacterId || null,
@@ -1736,6 +1790,7 @@ function createAccountRegistry(options = {}) {
     isCharacterSeasonComplete,
     getCharacterState,
     recordCharacterProgress,
+    recordAuditorEnding,
     recordCharacterSale,
     canSellCharacter,
     characterStatus,
@@ -1832,9 +1887,39 @@ function normalizeCharacterState(character) {
   if (!character.mandatoryTasks || typeof character.mandatoryTasks !== 'object' || Array.isArray(character.mandatoryTasks)) character.mandatoryTasks = {};
   character.collection = normalizeCollection(character.collection);
   character.stats = zeroStats(character.stats);
+  if (character.auditorEnding && typeof character.auditorEnding === 'object') {
+    const ending = resolveAuditorEnding(character.auditorEnding.id);
+    character.auditorEnding = ending ? createAuditorEndingRecord(ending, character.auditorEnding.recordedAt) : null;
+  } else {
+    character.auditorEnding = null;
+  }
+  character.endgameUnlocked = !!(character.auditorEnding && character.auditorEnding.endgame);
   if (!character.carry || typeof character.carry !== 'object' || Array.isArray(character.carry)) {
     character.carry = { mode: 'legacy', sourceCharacterId: null, sourceSeasonId: null, statsReset: false };
   }
+}
+
+function resolveAuditorEnding(id) {
+  const key = sanitizeText(id, 8).toUpperCase();
+  return AUDITOR_ENDING_BY_ID.get(key) || null;
+}
+
+function createAuditorEndingRecord(ending, recordedAt) {
+  return {
+    id: ending.id,
+    key: ending.key,
+    title: ending.title,
+    recordedAt: timestampOr(recordedAt, 0),
+    public: true,
+    endgame: !!ending.endgame,
+    sigil: ending.sigil || null,
+  };
+}
+
+function publicAuditorEnding(character) {
+  if (!character || !character.auditorEnding) return null;
+  const ending = resolveAuditorEnding(character.auditorEnding.id);
+  return ending ? createAuditorEndingRecord(ending, character.auditorEnding.recordedAt) : null;
 }
 
 function zeroStats(seed = {}) {
