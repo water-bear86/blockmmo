@@ -156,6 +156,8 @@
 
 <div id="wallet" class="hud">
   <h3>Runechain Wallet</h3>
+  <div class="row"><span>Wallet</span><b id="wStatus">Not connected</b></div>
+  <button id="wConnect" class="econbtn" style="width:100%;margin:2px 0 8px">Connect Wallet</button>
   <div class="row"><span>Confirmed RUNE</span><b id="bal">0.00</b></div>
   <div class="row"><span>Pending mempool</span><b id="pend">0.00</b></div>
   <div class="row"><span>Gold spendable</span><b id="gold">0.00</b></div>
@@ -235,6 +237,7 @@
 <script src="game/chain.js"></script>
 <script src="game/content.js"></script>
 <script src="game/account.js"></script>
+<script src="game/wallet.js"></script>
 <script>
 /* ============================================================================
    RUNECHAIN PIXEL - single-file browser MMO demo
@@ -244,7 +247,7 @@
 
 /* ------------------------- Core data/runtime ----------------------------- */
 const Content = window.RUNECHAIN_CONTENT;
-if (!Content || !window.RUNECHAIN_SHA256 || !window.RUNECHAIN_CHAIN || !window.RUNECHAIN_ACCOUNT) throw new Error('RUNECHAIN core scripts failed to load');
+if (!Content || !window.RUNECHAIN_SHA256 || !window.RUNECHAIN_CHAIN || !window.RUNECHAIN_ACCOUNT || !window.RUNECHAIN_WALLET) throw new Error('RUNECHAIN core scripts failed to load');
 const {
   ECON, STORY, RELICS, SIGILS, AUDITOR_ENDINGS, SKINS, ASSETS, NPCS, ACT1_GRACEFALL, AREA1_LORE, AREA1_PUZZLES, WORLD_PORTALS,
   PLAT_LEVEL, BATTLE_LEVEL, TURN_ENCOUNTER, BOSS_SCRIPT,
@@ -289,6 +292,50 @@ const Econ = {
   },
   spendGold(name, amt, note){ Chain.debit(name,amt,note,'GOLD','GOLD_SINK'); }
 };
+
+/* ----- Wallet seam (PRD F6.4 / A3) ---------------------------------------
+   The client talks ONLY to the adapter manager from game/wallet.js, never to a
+   wallet SDK directly. Phantom is one adapter; a deterministic mock is the
+   fallback so the flow works with no extension. Adding a wallet (e.g. mobile) is
+   a new adapter module with zero changes here. */
+const Wallet = (function(){
+  const W = window.RUNECHAIN_WALLET;
+  const manager = W.createWalletManager({
+    adapters: [ W.createPhantomAdapter(), W.createMockAdapter({ name:'mock' }) ],
+  });
+  function preferredAdapter(){
+    return (typeof window!=='undefined' && window.solana && window.solana.isPhantom) ? 'phantom' : 'mock';
+  }
+  return {
+    manager,
+    async connect(){ const name=preferredAdapter(); const pk=await manager.connect(name); return { name, pk }; },
+    disconnect(){ return manager.disconnect(); },
+    signTransaction(tx){ return manager.signTransaction(tx); },
+    get address(){ return manager.getPublicKey(); },
+    get active(){ return manager.activeName(); },
+  };
+})();
+
+/* Server-authority settlement seam (U7 / F6.4 / F5.4). In production the
+   authoritative server BUILDS and serializes the wSOL settlement transaction
+   (50/35/15 split) and the client only signs it; real on-chain submission is
+   legal-gated (F6.3) and stays mocked here. The Gold credit reconciles onto the
+   Chainwell after a signed settlement (S1.2 crossing point). */
+const Settlement = {
+  buildTx(payer, sol){
+    return {
+      kind:'runechain.settlement.v1',
+      builtBy:'server',            // never client-constructed in production (U7)
+      payer, sol,
+      split:{
+        burn:{ pct:ECON.SPLIT.burn, address:ECON.BURN_ADDR },
+        marketing:{ pct:ECON.SPLIT.marketing, address:ECON.MARKETING_ADDR },
+        ops:{ pct:ECON.SPLIT.ops, address:ECON.OPS_ADDR },
+      },
+    };
+  },
+};
+function shortPk(pk){ return pk ? (pk.length>10 ? pk.slice(0,4)+'…'+pk.slice(-4) : pk) : ''; }
 
 function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 const Story=(function(){
@@ -1164,7 +1211,33 @@ function buySkin(s){
   player.skinId=s.id; player.pal=skinPal(s.id); refreshWardrobe();
 }
 document.getElementById('wConv').onclick=()=>{ const g=Econ.convertRuneToGold(valueAddress(),Chain.spendable(valueAddress(),'RUNE')); if(g>0)log('Converting '+g.toFixed(2)+' Gold from RUNE.'); refreshWardrobe(); };
-document.getElementById('wBuy').onclick=()=>{ const g=Econ.buyGoldWithSol(valueAddress(),1); log('Bought '+g.toFixed(2)+' Gold in the devnet mock.'); refreshWardrobe(); };
+function updateWalletConnUI(){
+  const s=document.getElementById('wStatus'), b=document.getElementById('wConnect');
+  if(!s||!b)return;
+  if(Wallet.address){ s.textContent=Wallet.active+' · '+shortPk(Wallet.address); b.textContent='Disconnect Wallet'; }
+  else { s.textContent='Not connected'; b.textContent='Connect Wallet'; }
+}
+document.getElementById('wConnect').onclick=async()=>{
+  try{
+    if(Wallet.address){ await Wallet.disconnect(); log('Wallet disconnected.'); }
+    else { const c=await Wallet.connect(); log('Connected '+c.name+' wallet ('+shortPk(c.pk)+').'); }
+  }catch(err){ log('Wallet: '+esc(err.message||String(err))); }
+  updateWalletConnUI();
+};
+document.getElementById('wBuy').onclick=async()=>{
+  const sol=1;
+  try{
+    if(!Wallet.address){ await Wallet.connect(); updateWalletConnUI(); }
+    // Server builds + serializes the settlement tx (U7); the adapter only signs it (F6.4).
+    const tx=Settlement.buildTx(valueAddress(),sol);
+    const signed=await Wallet.signTransaction(tx);
+    if(!signed) throw new Error('settlement not signed');
+    // Signed settlement (devnet mock, go-live legal-gated F6.3) -> reconcile Gold onto the Chainwell (S1.2).
+    const g=Econ.buyGoldWithSol(valueAddress(),sol);
+    log('Settled '+sol+' wSOL via '+Wallet.active+' wallet; credited '+g.toFixed(2)+' Gold (devnet mock).');
+    refreshWardrobe();
+  }catch(err){ log('Purchase failed: '+esc(err.message||String(err))); }
+};
 function toggleWallet(){
   state.wallet=!state.wallet;
   document.getElementById('wallet').style.display=state.wallet?'block':'none';
@@ -2156,6 +2229,7 @@ function updateWallet(){
   document.getElementById('burned').textContent=Econ.solTally(ECON.BURN_ADDR).toFixed(4);
   document.getElementById('marketingpool').textContent=Econ.solTally(ECON.MARKETING_ADDR).toFixed(4);
   document.getElementById('opspool').textContent=Econ.solTally(ECON.OPS_ADDR).toFixed(4);
+  updateWalletConnUI();
   let html='';
   if(Chain.mining)html+='<div class="blk mining">#'+Chain.mining.index+' mining - nonce '+Chain.mining.nonce.toLocaleString()+'</div>';
   for(const b of Chain.chain.slice(-5).reverse())html+='<div class="blk">#'+b.index+' '+b.hash.slice(0,12)+' - '+(b.txs||[]).length+' tx</div>';

@@ -4,6 +4,7 @@
 //   - an adapter-agnostic manager so swapping wallets needs no game-logic change
 //   - the sign-only seam: adapters sign a server-serialized tx, never build one
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
@@ -74,6 +75,26 @@ const { ADAPTER_METHODS, isAdapter, createPhantomAdapter, createMockAdapter, cre
   // 5. Registering a non-conforming adapter is rejected up front.
   assert.throws(() => createWalletManager({ adapters: [{ name: 'bad' }] }), /must implement/);
   ok('manager rejects adapters that break the contract');
+
+  // 6. The client (index.html) actually WIRES the adapter into the buy-Gold flow (F6.4) —
+  //    the abstraction is not just present, it is on the live path: the module is loaded, a
+  //    manager is built from phantom + mock adapters, the purchase signs a server-built tx
+  //    through the manager, and no raw wallet SDK call leaks into game code.
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert(/<script\s+src="game\/wallet\.js">/.test(html), 'index.html loads game/wallet.js');
+  assert(/createWalletManager\s*\(/.test(html), 'client builds a wallet manager');
+  assert(/createPhantomAdapter\s*\(/.test(html) && /createMockAdapter\s*\(/.test(html),
+    'manager registers phantom + mock adapters (swap = new adapter, no game-logic change)');
+  // The Buy-Gold handler must sign through the adapter/manager before crediting Gold.
+  const buy = html.slice(html.indexOf("getElementById('wBuy')"));
+  const buyHandler = buy.slice(0, buy.indexOf('function toggleWallet'));
+  assert(/\.signTransaction\s*\(/.test(buyHandler), 'buy-Gold flow signs the tx through the adapter');
+  assert(buyHandler.indexOf('signTransaction') < buyHandler.indexOf('buyGoldWithSol'),
+    'Gold is credited only AFTER a signed settlement (S1.2 reconciliation)');
+  assert(/builtBy\s*:\s*'server'/.test(html), 'settlement tx is server-built/serialized (U7), client only signs');
+  // No raw wallet SDK call (window.solana.signTransaction) outside the adapter module.
+  assert(!/window\.solana\.signTransaction/.test(html), 'no raw window.solana.* signing in game code (all via adapter)');
+  ok('client wires the adapter into the live buy-Gold flow (no raw wallet SDK in game code)');
 
   console.log('\nwallet adapter verification passed (' + pass + ' checks).');
 })().catch((err) => { console.error(err); process.exit(1); });
