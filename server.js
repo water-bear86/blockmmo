@@ -101,11 +101,18 @@ function createRealmServer(options = {}) {
   const miningTtlMs = options.miningTtlMs == null ? 30000 : options.miningTtlMs;
   const staleThresholdMs = options.staleThresholdMs == null ? 10000 : options.staleThresholdMs;
   const pvpTurnTimeoutMs = options.pvpTurnTimeoutMs == null ? 30000 : options.pvpTurnTimeoutMs;
+  // #89: cap unproven real-time reward claims per character per rolling window so a client
+  // cannot farm unbounded RUNE by replaying kill claims (the real-time arena has no kill proof,
+  // unlike the proven solo `segment:complete` path). [NUMBER] balance placeholder — tune freely;
+  // set rewardRateMax<=0 to disable. Generous enough never to hinder legitimate play.
+  const rewardRateMax = options.rewardRateMax == null ? 100 : options.rewardRateMax;
+  const rewardRateWindowMs = options.rewardRateWindowMs == null ? 60000 : options.rewardRateWindowMs;
   const quiet = !!options.quiet;
   const clients = new Set();
   const pendingMining = new Map();
   const settledMiningCandidates = new Map();
   const validatedOutcomes = new Set();
+  const rewardIssueTimes = new Map();
   const pvpDuels = new Map();
   const accountRegistry = options.accountRegistry || createAccountRegistry({ accountsFile, season: seasonConfig, now });
   let saveTimer = null;
@@ -755,7 +762,14 @@ function createRealmServer(options = {}) {
       send(client, { t: 'mine:error', error: result.error });
       return result;
     }
-    return issueMiningCandidate(client, (candidateId) => ({
+    // #89: bound unproven real-time reward claims per character (the kill itself is not
+    // server-verified here). Without this, a client can replay kill claims to farm RUNE.
+    const rate = checkRewardRate(client.character.id);
+    if (!rate.ok) {
+      send(client, { t: 'mine:error', error: rate.error });
+      return rate;
+    }
+    const issued = issueMiningCandidate(client, (candidateId) => ({
       to: client.character.address,
       amt: reward.amt,
       note: reward.note,
@@ -776,6 +790,27 @@ function createRealmServer(options = {}) {
         seasonId,
       },
     }));
+    // Count only successfully issued candidates toward the window (a failed issue mints nothing).
+    if (issued.ok) recordRewardIssue(client.character.id);
+    return issued;
+  }
+
+  // #89 helpers: a per-character sliding-window cap on issued reward candidates.
+  function checkRewardRate(characterId) {
+    if (!(rewardRateMax > 0)) return { ok: true };
+    const cutoff = now() - rewardRateWindowMs;
+    const times = (rewardIssueTimes.get(characterId) || []).filter((t) => t > cutoff);
+    rewardIssueTimes.set(characterId, times);
+    if (times.length >= rewardRateMax) {
+      return blockError('reward_rate_limited', 'Too many reward claims in a short window — slow down.');
+    }
+    return { ok: true };
+  }
+
+  function recordRewardIssue(characterId) {
+    const times = rewardIssueTimes.get(characterId) || [];
+    times.push(now());
+    rewardIssueTimes.set(characterId, times);
   }
 
   function issueSpendMiningWork(client, source) {

@@ -17,30 +17,22 @@ Outputs go to `contracts/target/deploy/` (`.so` + IDL JSON).
 
 ### Verification status & toolchain
 
-**The code is verified** — both programs type-check clean via the host toolchain
-(`cargo check`, cargo 1.91, which parses edition 2024): only deprecation/unused warnings, no
-errors.
+**Both programs build to deployable `.so` artifacts** with a current toolchain. Verified with
+cargo 1.94, solana-cli 3.1 (Agave), anchor-cli 1.0, `cargo-build-sbf` 4.0: `cargo build-sbf`
+produces `runechain_settlement.so` and `runechain_character.so` under `target/deploy/` (only
+deprecation/unused warnings, no errors).
 
-The **SBF deploy build** (`cargo build-sbf`, which produces the `.so`) needs platform-tools whose
-bundled cargo is **≥ 1.85**, because the current Solana dependency tree pulls crates that moved
-to **Rust edition 2024** (`blake3 1.8 → constant_time_eq 0.4`, `indexmap → hashbrown 0.17`,
-`zeroize 1.9`, …). The installed tools are just short:
+> **Older platform-tools note.** The Solana dependency tree pulls crates on **Rust edition
+> 2024**, so the SBF build needs platform-tools whose bundled cargo is **≥ 1.85**. Releases with
+> cargo `1.79`/`1.84` (older `--tools-version` defaults like `v1.43`/`v1.50`) fall short; pass a
+> newer `--tools-version` if your installed default is older:
+>
+> ```bash
+> cargo build-sbf --tools-version <release-with-cargo-1.85+>
+> ```
 
-| platform-tools | bundled cargo | edition2024 |
-|---|---|---|
-| `v1.43` (default) | 1.79 | ✗ |
-| `v1.50` | 1.84 | ✗ (one minor short) |
-| a release bundling cargo ≥ 1.85 | ≥ 1.85 | ✓ |
-
-To produce deployable artifacts, install newer platform-tools:
-
-```bash
-cargo build-sbf --tools-version <release-with-cargo-1.85+>
-```
-
-This is an environment/toolchain version requirement, **not** a code issue — `cargo check`
-already proves the programs compile. (Go-live is legal-gated regardless, so a deployable `.so`
-is not the current gate.)
+(Go-live is legal-gated regardless — F6.3/F7 — so producing a deployable `.so` does not enable
+real settlement or sales.)
 
 ## Program keypairs
 
@@ -61,6 +53,33 @@ solana program deploy target/deploy/runechain_character.so
 
 ## Tests
 
-TODO: Anchor/TS integration tests under `contracts/tests/` (happy paths + the gate reverts:
-purchase while paused, list mid-season, list with tasks unfinished, buy releases escrow,
-seller restart flag).
+Two layers:
+
+**Unit (pure-logic, no validator).** In-crate `#[cfg(test)]` modules cover the load-bearing
+decision logic — the F5.4 split math (exact/lossless, ops absorbs the remainder, bps must sum to
+10 000) and the F7.3 transfer-gate truth table + post-sale transition. Run anywhere:
+
+```bash
+cd contracts
+cargo test
+```
+
+**Integration (instruction-level, in-process via litesvm).** `tests-integration/` loads the
+compiled `.so` into an in-process SVM and exercises the real handlers, account constraints, and
+CPIs — the happy paths and the gate reverts (settlement: starts paused, purchase reverts while
+paused, atomic 50/35/15 split with a true burn; character: list reverts with tasks unfinished,
+list reverts mid-season, sale releases escrow + flags seller restart, buy reverts while paused):
+
+```bash
+cd contracts/tests-integration
+cargo test
+```
+
+The integration suite's runtime needs **native OpenSSL**, so it builds/runs on Linux (or any
+host with OpenSSL) — it won't build on a bare Windows host that lacks OpenSSL. Run it after
+`cargo build-sbf` has produced the `.so` (the suite `include_bytes!`s them from
+`target/deploy/`). The crate is a detached workspace so its host-only test deps never enter the
+`cargo build-sbf` on-chain build.
+
+> No CI workflow is committed for these yet (the contributor token lacks the `workflow` scope).
+> Until one is added, run the suite on a Linux host as above.
