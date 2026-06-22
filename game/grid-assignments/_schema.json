@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RUNECHAIN grid assignment spec",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "type",
+    "objective_type",
+    "capability",
+    "planner",
+    "description",
+    "prompt_template",
+    "gold_reward",
+    "output_schema"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Dispatch job type, passed to createJob as the type argument."
+    },
+    "objective_type": {
+      "const": "inference",
+      "description": "Grid assignment objective class. RUNECHAIN grid specs use inference jobs."
+    },
+    "capability": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Worker capability required for the job, passed to createJob as capabilityRequired."
+    },
+    "planner": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Planner or executor family expected to handle this assignment."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable summary of what the assignment produces."
+    },
+    "prompt_template": {
+      "type": "string",
+      "minLength": 120,
+      "description": "Self-contained prompt text used as the job prompt."
+    },
+    "gold_reward": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Positive Gold reward for a completed assignment."
+    },
+    "output_schema": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Expected structure of the assignment output."
+    }
+  }
+}
