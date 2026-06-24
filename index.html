@@ -2690,7 +2690,7 @@ function startGame(){
   // When the realm enforces identity, the device key alone is not enough — gate on SSO + wallet.
   const auth=Net.getAuthState();
   if(auth.requireIdentity&&auth.ssoEnabled&&!auth.signedIn){ showSigninGate(window.RUNECHAIN_SIGNIN.joinErrorMessage('sso_required')); return; }
-  if(auth.requireIdentity&&!walletReady){ showSigninGate(window.RUNECHAIN_SIGNIN.joinErrorMessage('wallet_required')); return; }
+  if(auth.requireWallet&&!walletReady){ showSigninGate(window.RUNECHAIN_SIGNIN.joinErrorMessage('wallet_required')); return; }
   player.name=(document.getElementById('name').value.trim()||'Recorded').slice(0,14);
   player.address=player.characterId||player.name;
   document.getElementById('charname').textContent=player.name;
@@ -2717,11 +2717,11 @@ function refreshSigninUI(){
   if(!gated){ if(goBtn)goBtn.disabled=false; return; } // legacy/open mode: no extra gate
   const bits=[];
   bits.push(a.signedIn?('Signed in'+(a.sso&&a.sso.email?(' as '+esc(a.sso.email)):'')):'Step 1 — sign in with Google');
-  bits.push(walletReady?'Wallet connected':'Step 2 — connect your wallet');
+  if(a.requireWallet)bits.push(walletReady?'Wallet connected':'Step 2 — connect your wallet');
   if(signinStatusEl)signinStatusEl.innerHTML=bits.join(' &middot; ');
   if(googleBtn)googleBtn.disabled=!!a.signedIn;
-  if(walletBtn)walletBtn.disabled=walletReady;
-  if(goBtn)goBtn.disabled=!(a.signedIn&&walletReady);
+  if(walletBtn){ walletBtn.hidden=!a.requireWallet; walletBtn.disabled=walletReady; } // wallet step only when required
+  if(goBtn)goBtn.disabled=!(a.signedIn&&(!a.requireWallet||walletReady));
 }
 function showSigninGate(message){
   const startEl=document.getElementById('start');

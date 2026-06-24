@@ -73,7 +73,7 @@ const realm = serverApi.createRealmServer({
   ledgerFile: path.join(tempDir, 'ledger.json'),
   accountsFile: path.join(tempDir, 'accounts.json'),
   seasonId: 'season-one', difficulty: 1, now: () => nowMs, saveDelayMs: 0, quiet: true,
-  requireIdentity: true,
+  requireIdentity: true, requireWallet: true, // full enforcement: both legs required
 });
 
 const ssoA = { provider: 'google', sub: 'google-sub-A', email: 'a@x.io', emailVerified: true, name: 'Ada' };
@@ -131,6 +131,23 @@ const second = attemptJoin(realm, makeClient('b'), { device: makeDevice(), walle
 assert.strictEqual(second.result.ok, true);
 assert.notStrictEqual(second.result.accountId, acctId);
 realm.close();
+
+// --- Google-only mode: requireIdentity ON, requireWallet OFF -> SSO required, wallet OPTIONAL -------
+const ssoOnlyRealm = serverApi.createRealmServer({
+  ledgerFile: path.join(tempDir, 'ledger-ssoonly.json'),
+  accountsFile: path.join(tempDir, 'accounts-ssoonly.json'),
+  seasonId: 'season-one', difficulty: 1, now: () => 13_000, saveDelayMs: 0, quiet: true,
+  requireIdentity: true, requireWallet: false,
+});
+const ssoC = { provider: 'google', sub: 'google-sub-C', email: 'c@x.io', emailVerified: true, name: 'Cy' };
+// no session -> still rejected (SSO is required)
+assert.strictEqual(attemptJoin(ssoOnlyRealm, makeClient('s1'), { device: makeDevice(), sso: null }).result.error.code, 'sso_required', 'Google-only still requires SSO');
+// signed in, NO wallet -> succeeds (wallet not required in this mode)
+const ssoOnly = attemptJoin(ssoOnlyRealm, makeClient('s2'), { device: makeDevice(), wallet: null, sso: ssoC, name: 'Cy' });
+assert.strictEqual(ssoOnly.result.ok, true, 'Google-only: SSO without a wallet joins');
+assert.strictEqual(ssoOnly.result.identity.sso.email, 'c@x.io');
+assert.strictEqual(ssoOnly.result.identity.wallet, null, 'no wallet bound in Google-only mode');
+ssoOnlyRealm.close();
 
 // --- legacy path: with requireIdentity OFF, device-only join still works ----------------------------
 const legacyRealm = serverApi.createRealmServer({

@@ -122,7 +122,10 @@ function createRealmServer(options = {}) {
   // the legacy device-key-only join keeps working unchanged; flip RUNECHAIN_REQUIRE_IDENTITY=1 once
   // the SSO+wallet client UI ships and the Google OAuth app is registered.
   const requireIdentity = options.requireIdentity != null ? !!options.requireIdentity : process.env.RUNECHAIN_REQUIRE_IDENTITY === '1';
-  const accountRegistry = options.accountRegistry || createAccountRegistry({ accountsFile, season: seasonConfig, now, requireIdentity });
+  // Wallet enforcement is a SEPARATE flag from SSO so they roll out independently — require Google
+  // sign-in first (RUNECHAIN_REQUIRE_IDENTITY), add the wallet requirement once its leg is proven.
+  const requireWallet = options.requireWallet != null ? !!options.requireWallet : process.env.RUNECHAIN_REQUIRE_WALLET === '1';
+  const accountRegistry = options.accountRegistry || createAccountRegistry({ accountsFile, season: seasonConfig, now, requireIdentity, requireWallet });
   const announceFeed = options.announceFeed || createAnnounceFeed({ seasonId });
 
   // SSO leg (Google) + browser sessions. Secrets come from env, never the client.
@@ -290,7 +293,7 @@ function createRealmServer(options = {}) {
     if (route === '/auth/session' && req.method === 'GET') {
       const session = cookies.rc_session ? sessionStore.get(cookies.rc_session) : null;
       const sso = session && session.sso ? { provider: session.sso.provider, email: session.sso.email, name: session.sso.name } : null;
-      return jsonResponse(res, 200, { signedIn: !!sso, sso, ssoEnabled: oauth.enabled, requireIdentity });
+      return jsonResponse(res, 200, { signedIn: !!sso, sso, ssoEnabled: oauth.enabled, requireIdentity, requireWallet });
     }
 
     if (route === '/auth/logout' && (req.method === 'POST' || req.method === 'GET')) {
@@ -437,7 +440,7 @@ function createRealmServer(options = {}) {
     const name = sanitizeDisplayName(message.name);
     // Use the identity-binding path when SSO/wallet are in play (or required); otherwise the legacy
     // device-key-only join keeps working for the current client + existing tests.
-    const useIdentity = requireIdentity || !!client.sso || !!message.wallet;
+    const useIdentity = requireIdentity || requireWallet || !!client.sso || !!message.wallet;
     const result = useIdentity
       ? accountRegistry.verifyIdentityJoin({ credential: message.credential, wallet: message.wallet, sso: client.sso, name })
       : accountRegistry.verifyJoin(message.credential, name);
@@ -1447,6 +1450,7 @@ function createAccountRegistry(options = {}) {
   const challengeTtlMs = options.challengeTtlMs == null ? 60000 : options.challengeTtlMs;
   const walletChallengeTtlMs = options.walletChallengeTtlMs == null ? 60000 : options.walletChallengeTtlMs;
   const requireIdentity = !!options.requireIdentity;
+  const requireWallet = !!options.requireWallet;
   const pendingChallenges = new Map();
   const pendingWalletChallenges = new Map();
   let registry = loadRegistry();
@@ -1588,7 +1592,7 @@ function createAccountRegistry(options = {}) {
       walletAddress,
       index: identityIndex,
       requireSso: requireIdentity,
-      requireWallet: requireIdentity,
+      requireWallet: requireWallet,
     });
     if (!decision.ok) return decision;
 

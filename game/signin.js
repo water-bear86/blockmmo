@@ -24,6 +24,7 @@
       signedIn: !!json.signedIn,
       ssoEnabled: !!json.ssoEnabled,
       requireIdentity: !!json.requireIdentity,
+      requireWallet: !!json.requireWallet,
       sso: json.sso || null,
     };
   }
@@ -92,9 +93,10 @@
     return JOIN_ERRORS[code] || ('Sign-in was rejected (' + (code || 'unknown') + ').');
   }
 
-  // Does this account:challenge response require the wallet leg before we can join?
+  // Does this account:challenge response require the wallet leg before we can join? The wallet is
+  // gated by its OWN flag (requireWallet), independent of the SSO requirement (requireIdentity).
   function needsWalletLeg(authState, walletConnected) {
-    return !!(authState && authState.requireIdentity) || !!walletConnected;
+    return !!(authState && authState.requireWallet) || !!walletConnected;
   }
 
   return {

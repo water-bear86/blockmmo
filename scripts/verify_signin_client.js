@@ -19,22 +19,23 @@ function ok(label) { passed++; if (process.env.VERBOSE) console.log('  ok -', la
   ok('base64url encodes bytes url-safe');
 
   // ---- parseSession defaults --------------------------------------------------------------------
-  assert.deepStrictEqual(Signin.parseSession({}), { signedIn: false, ssoEnabled: false, requireIdentity: false, sso: null });
+  assert.deepStrictEqual(Signin.parseSession({}), { signedIn: false, ssoEnabled: false, requireIdentity: false, requireWallet: false, sso: null });
   assert.deepStrictEqual(
-    Signin.parseSession({ signedIn: true, ssoEnabled: true, requireIdentity: true, sso: { email: 'a@b' } }),
-    { signedIn: true, ssoEnabled: true, requireIdentity: true, sso: { email: 'a@b' } }
+    Signin.parseSession({ signedIn: true, ssoEnabled: true, requireIdentity: true, requireWallet: true, sso: { email: 'a@b' } }),
+    { signedIn: true, ssoEnabled: true, requireIdentity: true, requireWallet: true, sso: { email: 'a@b' } }
   );
   ok('parseSession normalizes flags');
 
-  // ---- needsWalletLeg ---------------------------------------------------------------------------
-  assert.strictEqual(Signin.needsWalletLeg({ requireIdentity: true }, false), true, 'required -> needs wallet');
-  assert.strictEqual(Signin.needsWalletLeg({ requireIdentity: false }, true), true, 'already connected -> include wallet');
-  assert.strictEqual(Signin.needsWalletLeg({ requireIdentity: false }, false), false, 'legacy/open -> skip wallet');
+  // ---- needsWalletLeg (gated by requireWallet, independent of requireIdentity) -------------------
+  assert.strictEqual(Signin.needsWalletLeg({ requireWallet: true }, false), true, 'wallet required -> needs wallet');
+  assert.strictEqual(Signin.needsWalletLeg({ requireWallet: false }, true), true, 'already connected -> include wallet');
+  assert.strictEqual(Signin.needsWalletLeg({ requireWallet: false }, false), false, 'wallet optional -> skip wallet');
+  assert.strictEqual(Signin.needsWalletLeg({ requireIdentity: true, requireWallet: false }, false), false, 'Google-only -> skip wallet');
   ok('needsWalletLeg gates the wallet round-trip');
 
   // ---- loadSession via mock fetch ---------------------------------------------------------------
-  const goodFetch = async () => ({ ok: true, json: async () => ({ signedIn: true, ssoEnabled: true, requireIdentity: true, sso: { email: 'p@x' } }) });
-  assert.deepStrictEqual(await Signin.loadSession(goodFetch), { signedIn: true, ssoEnabled: true, requireIdentity: true, sso: { email: 'p@x' } });
+  const goodFetch = async () => ({ ok: true, json: async () => ({ signedIn: true, ssoEnabled: true, requireIdentity: true, requireWallet: false, sso: { email: 'p@x' } }) });
+  assert.deepStrictEqual(await Signin.loadSession(goodFetch), { signedIn: true, ssoEnabled: true, requireIdentity: true, requireWallet: false, sso: { email: 'p@x' } });
   const badFetch = async () => { throw new Error('offline'); };
   assert.strictEqual((await Signin.loadSession(badFetch)).signedIn, false, 'fetch failure degrades to signed-out');
   ok('loadSession reads /auth/session + fails soft');
