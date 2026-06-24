@@ -945,6 +945,10 @@ addEventListener('keydown',e=>{
     else if(e.code==='Escape'){ e.preventDefault(); Chat.close(); }
     return;
   }
+  // Typing in a text field (the name box, sign-in inputs, etc.) must not be hijacked by game
+  // keybinds — otherwise letters bound to actions (L/J=attack, etc.) never reach the input.
+  const _editing=e.target;
+  if(_editing&&(_editing.tagName==='INPUT'||_editing.tagName==='TEXTAREA'||_editing.isContentEditable))return;
   if(!keys[e.code]&&!e.repeat)pressed[e.code]=true;
   keys[e.code]=true;
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
