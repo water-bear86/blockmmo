@@ -111,7 +111,7 @@
   .statbtn small{display:block;color:#9f967f;font-size:11px;margin-top:2px}
   .statbtn .cost{color:var(--gold)}
   button:hover:not(:disabled){border-color:var(--gold);background:#222820}
-  button:disabled{opacity:.42;cursor:default}
+  button:disabled{opacity:.42;cursor:not-allowed}
   button:focus-visible, input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
   button:active{transform:translateY(1px);filter:brightness(.9)}
   kbd{display:inline-block;padding:1px 4px;font-family:inherit;font-size:10px;background:var(--ink);
@@ -1208,7 +1208,7 @@ function refreshGrace(){
   document.getElementById('lvBal').textContent=sp.toFixed(2);
   document.getElementById('lvCost').textContent=cost;
   for(const id of ['cVigor','cEnd','cStr'])document.getElementById(id).textContent=cost+' R';
-  document.querySelectorAll('.statbtn').forEach(b=>b.disabled=sp<cost);
+  document.querySelectorAll('.statbtn').forEach(b=>{ b.disabled=sp<cost; b.title=b.disabled?'Not enough confirmed RUNE':''; });
   renderRelics(sp);
 }
 function doLevel(stat){
@@ -1230,9 +1230,9 @@ function renderRelics(sp){
     const row=document.createElement('div'); row.className='itemrow';
     const icon=ASSETS[it.icon]&&ASSETS[it.icon].src;
     row.innerHTML=(icon?'<img class="itemicon" src="'+esc(icon)+'" alt="">':'<span></span>')+
-      '<span><b>'+esc(it.name)+'</b><small>'+esc(it.desc)+'</small></span><button>'+(own?'Forged':it.price+' R')+'</button>';
+      '<span><b>'+esc(it.name)+'</b><small>'+esc(it.desc)+'</small></span><button aria-label="'+(own?'Forged '+esc(it.name):'Forge '+esc(it.name)+' for '+it.price+' RUNE')+'">'+(own?'Forged':it.price+' R')+'</button>';
     const btn=row.querySelector('button');
-    btn.disabled=own||sp<it.price; btn.onclick=()=>forgeRelic(it);
+    btn.disabled=own||sp<it.price; if(btn.disabled) btn.title=own?'Already forged':'Not enough confirmed RUNE'; else btn.title=''; btn.onclick=()=>forgeRelic(it);
     list.appendChild(row);
   }
 }
@@ -1265,13 +1265,16 @@ function refreshWardrobe(){
     if(s.secret&&!own)continue; // exploration-only cosmetic: hidden from the shop until earned
     const eq=player.skinId===s.id;
     const row=document.createElement('div'); row.className='skin'+(eq?' equipped':'');
-    row.innerHTML='<span class="sw" style="background:'+s.body+';box-shadow:inset 0 0 0 5px '+s.trim+'"></span><span class="sn">'+esc(s.name)+'</span><button class="skinbtn">'+(eq?'Equipped':own?'Equip':s.price+' G')+'</button>';
+    row.innerHTML='<span class="sw" style="background:'+s.body+';box-shadow:inset 0 0 0 5px '+s.trim+'"></span><span class="sn">'+esc(s.name)+'</span><button class="skinbtn" aria-label="'+(eq?'Equipped '+esc(s.name):own?'Equip '+esc(s.name):'Buy '+esc(s.name)+' for '+s.price+' Gold')+'">'+(eq?'Equipped':own?'Equip':s.price+' G')+'</button>';
     const btn=row.querySelector('button');
     btn.disabled=eq||(!own&&spend<s.price);
+    if(btn.disabled) btn.title=eq?'Already equipped':(!own&&spend<s.price?'Not enough Gold':''); else btn.title='';
     btn.onclick=()=>buySkin(s);
     list.appendChild(row);
   }
-  document.getElementById('wConv').disabled=Chain.spendable(valueAddress(),'RUNE')<=0.0001;
+  const convBtn=document.getElementById('wConv');
+  convBtn.disabled=Chain.spendable(valueAddress(),'RUNE')<=0.0001;
+  convBtn.title=convBtn.disabled?'Not enough RUNE to convert':'';
 }
 function buySkin(s){
   if(!ownedSkin(s.id)){
