@@ -1294,12 +1294,13 @@ function updateWalletConnUI(){
 document.getElementById('wConnect').onclick=async function(){
   const btn = this;
   btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
   btn.textContent = Wallet.address ? 'Disconnecting...' : 'Connecting...';
   try{
     if(Wallet.address){ await Wallet.disconnect(); log('Wallet disconnected.'); }
     else { const c=await Wallet.connect(); log('Connected '+c.name+' wallet ('+shortPk(c.pk)+').'); }
   }catch(err){ log('Wallet: '+esc(err.message||String(err))); }
-  btn.disabled = false;
+  finally { btn.disabled = false; btn.setAttribute('aria-busy', 'false'); }
   updateWalletConnUI();
 };
 document.getElementById('wBuy').onclick=async function(){
@@ -1307,6 +1308,7 @@ document.getElementById('wBuy').onclick=async function(){
   const btn = this;
   const oldText = btn.textContent;
   btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
   btn.textContent = 'Processing...';
   try{
     if(!Wallet.address){ await Wallet.connect(); updateWalletConnUI(); }
@@ -1319,7 +1321,7 @@ document.getElementById('wBuy').onclick=async function(){
     log('Settled '+sol+' wSOL via '+Wallet.active+' wallet; credited '+g.toFixed(2)+' Gold (devnet mock).');
     refreshWardrobe();
   }catch(err){ log('Purchase failed: '+esc(err.message||String(err))); }
-  finally { btn.disabled = false; btn.textContent = oldText; }
+  finally { btn.disabled = false; btn.setAttribute('aria-busy', 'false'); btn.textContent = oldText; }
 };
 function toggleWallet(){
   state.wallet=!state.wallet;
