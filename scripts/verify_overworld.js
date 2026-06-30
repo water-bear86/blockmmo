@@ -53,7 +53,7 @@ test('existing off-path lore coordinates stay reachable', function () {
 });
 
 test('the quest corridor remains walkable at every major encounter', function () {
-  const xs = [0, 156, 456, 656, 812, 1076, 1344, 1544, 1828, 2060, 2280];
+  const xs = [0, 156, 456, 656, 812, 1076, 1344, 1544, 1828, 2060, 2280, 2520, 2800, 3080];
   for (const x of xs) {
     assert.equal(Overworld.tileAt(x, 0).blocked, false, 'corridor blocked at x=' + x);
   }
@@ -85,7 +85,7 @@ test('water blocks movement while the marsh boardwalk does not', function () {
 });
 
 test('world bounds stop a moving circle without tunneling', function () {
-  const body = { x: 2380, y: 0, radius: 7 };
+  const body = { x: 3580, y: 0, radius: 7 };
   const result = Overworld.moveCircle(body, 80, 0, { solidProps: false });
   assert.equal(result.hitX, true);
   assert.ok(body.x <= Overworld.BOUNDS.maxX - body.radius);
@@ -136,6 +136,21 @@ test('render helpers complete against a minimal Canvas context', function () {
   Overworld.drawProps(context, camera, 320, 180, 1, options);
   Overworld.drawLandmarks(context, camera, 320, 180, 1, { labels: true, allLabels: true });
   Overworld.drawMinimap(context, 0, 0, 160, 60, { x: 0, y: 0 }, options);
+});
+
+test('S2 regions exist in REGIONS and world extends to 3600', function () {
+  assert.ok(Overworld.BOUNDS.maxX >= 3600, 'world must extend to x=3600 for S2 content');
+  const ids = Overworld.REGIONS.map(function (r) { return r.id; });
+  assert.ok(ids.includes('amendment-wastes'), 'amendment-wastes region must exist');
+  assert.ok(ids.includes('erased-shore'), 'erased-shore region must exist');
+  assert.ok(ids.includes('scribes-purgatory'), 'scribes-purgatory region must exist');
+});
+
+test('S2 boss landmarks exist in LANDMARKS', function () {
+  const lids = Overworld.LANDMARKS.map(function (l) { return l.id; });
+  assert.ok(lids.includes('grand-auditor'), 'grand-auditor landmark must exist');
+  assert.ok(lids.includes('tide-keeper'), 'tide-keeper landmark must exist');
+  assert.ok(lids.includes('prior-season'), 'prior-season landmark must exist');
 });
 
 process.stdout.write('\nAll overworld tests passed.\n');

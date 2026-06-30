@@ -12,7 +12,7 @@
 
   const VERSION = '0.1.0';
   const TILE = 16;
-  const BOUNDS = Object.freeze({ minX: -768, minY: -576, maxX: 2400, maxY: 576 });
+  const BOUNDS = Object.freeze({ minX: -768, minY: -576, maxX: 3600, maxY: 576 });
 
   const REGIONS = Object.freeze([
     Object.freeze({
@@ -105,6 +105,45 @@
       }),
       obstacleDensity: 0.025,
       obstacle: 'record'
+    }),
+    Object.freeze({
+      id: 'amendment-wastes',
+      name: 'The Amendment Wastes',
+      subtitle: 'Permits for movement through ossified records — only after the ledger is broken.',
+      minX: 2400,
+      maxX: 2680,
+      palette: Object.freeze({
+        ground: '#2c2a1e', groundAlt: '#333120', road: '#60532a', roadEdge: '#3d3520',
+        detail: '#756b44', prop: '#504935', propHi: '#8a7b50', shadow: '#1a1812', accent: '#c8a84a'
+      }),
+      obstacleDensity: 0.04,
+      obstacle: 'stone'
+    }),
+    Object.freeze({
+      id: 'erased-shore',
+      name: 'The Erased Shore',
+      subtitle: 'Stories keep time where ledgers cannot reach.',
+      minX: 2680,
+      maxX: 3000,
+      palette: Object.freeze({
+        ground: '#1e2c2e', groundAlt: '#243234', road: '#4a6068', roadEdge: '#2e4048',
+        detail: '#4a8090', prop: '#2e505a', propHi: '#6098a4', shadow: '#121b1c', accent: '#4ab8c4'
+      }),
+      obstacleDensity: 0.05,
+      obstacle: 'reed'
+    }),
+    Object.freeze({
+      id: 'scribes-purgatory',
+      name: "Scribe's Purgatory",
+      subtitle: 'Where all endings arrive to wait, and prior seasons remember.',
+      minX: 3000,
+      maxX: 3600,
+      palette: Object.freeze({
+        ground: '#201c2c', groundAlt: '#262032', road: '#5c5070', roadEdge: '#38304c',
+        detail: '#6a5880', prop: '#463858', propHi: '#8070a4', shadow: '#141018', accent: '#9b74ff'
+      }),
+      obstacleDensity: 0.03,
+      obstacle: 'record'
     })
   ]);
 
@@ -123,7 +162,11 @@
         Object.freeze({ x: 812, y: 0 }), Object.freeze({ x: 1076, y: 0 }),
         Object.freeze({ x: 1344, y: -6 }), Object.freeze({ x: 1544, y: 0 }),
         Object.freeze({ x: 1828, y: 0 }), Object.freeze({ x: 2060, y: 0 }),
-        Object.freeze({ x: 2280, y: 0 }), Object.freeze({ x: 2370, y: 0 })
+        Object.freeze({ x: 2280, y: 0 }), Object.freeze({ x: 2370, y: 0 }),
+        Object.freeze({ x: 2520, y: 0 }), Object.freeze({ x: 2680, y: -8 }),
+        Object.freeze({ x: 2800, y: 0 }), Object.freeze({ x: 2960, y: 10 }),
+        Object.freeze({ x: 3080, y: 0 }), Object.freeze({ x: 3200, y: 0 }),
+        Object.freeze({ x: 3400, y: 0 }), Object.freeze({ x: 3560, y: 0 })
       ])
     }),
     Object.freeze({
@@ -200,7 +243,13 @@
     Object.freeze({ id: 'ledger-bound', name: 'The Ledger-Bound', x: 1544, y: 0, kind: 'boss', radius: 60, unlock: 'q09', major: true }),
     Object.freeze({ id: 'archive-ascent', name: 'Archive Ascent', x: 1828, y: 0, kind: 'boss', radius: 58, unlock: 'q11', major: true }),
     Object.freeze({ id: 'seized-yard', name: 'Seized Asset Yard', x: 2060, y: 0, kind: 'boss', radius: 58, unlock: 'q12', major: true }),
-    Object.freeze({ id: 'auditor', name: 'The Auditor', x: 2280, y: 0, kind: 'boss', radius: 64, unlock: 'q13', major: true })
+    Object.freeze({ id: 'auditor', name: 'The Auditor', x: 2280, y: 0, kind: 'boss', radius: 64, unlock: 'q13', major: true }),
+    Object.freeze({ id: 'ossified-spark', name: 'Ossified Spark', x: 2440, y: 0, kind: 'hearth', radius: 60, major: true }),
+    Object.freeze({ id: 'grand-auditor', name: 'The Grand Auditor', x: 2520, y: 0, kind: 'boss', radius: 64, major: true }),
+    Object.freeze({ id: 'tide-spark', name: 'Tide Spark', x: 2720, y: 0, kind: 'hearth', radius: 60, major: true }),
+    Object.freeze({ id: 'tide-keeper', name: 'The Tide Keeper', x: 2800, y: 0, kind: 'boss', radius: 64, major: true }),
+    Object.freeze({ id: 'convergence-flame', name: 'Convergence Flame', x: 3080, y: -80, kind: 'hearth', radius: 60, major: true }),
+    Object.freeze({ id: 'prior-season', name: 'The Prior Season', x: 3200, y: 0, kind: 'boss', radius: 68, major: true })
   ]);
 
   const GATES = Object.freeze([
