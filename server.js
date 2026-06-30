@@ -93,8 +93,10 @@ function createRealmServer(options = {}) {
   const ledgerFile = options.ledgerFile || path.join(__dirname, 'ledger.json');
   const accountsFile = options.accountsFile || path.join(__dirname, 'accounts.json');
   const s2ContentFile = options.s2ContentFile || path.join(__dirname, 's2_content.json');
+  const halvingFile = options.halvingFile || path.join(__dirname, 'halving_schedule.json');
   const MOLT_BROKER_URL = options.moltBrokerUrl || process.env.MOLT_BROKER_URL || '';
   const MOLT_INGEST_KEY = options.moltIngestKey || process.env.MOLT_INGEST_KEY || '';
+  const ADMIN_TOKEN = options.adminToken || process.env.RUNECHAIN_ADMIN_TOKEN || '';
   const S2_CONTENT_TYPES = new Set(['npc_dialogue','lore_fragment','boss_script','quest_outline','cosmetic_name','area_intro_text']);
   let s2Content = [];
   try { s2Content = JSON.parse(fs.readFileSync(s2ContentFile, 'utf8')); } catch (_) { s2Content = []; }
@@ -102,6 +104,105 @@ function createRealmServer(options = {}) {
     const tmp = s2ContentFile + '.tmp';
     fs.writeFile(tmp, JSON.stringify(s2Content, null, 2), err => { if (!err) fs.rename(tmp, s2ContentFile, () => {}); });
   }
+
+  // ---- Halving mechanics (issue #107) ----------------------------------------
+  // halving_schedule.json: { halvingAt: ISO8601, newSeasonId, noticeSentAt, triggeredAt }
+  let halvingState = null;
+  try { halvingState = JSON.parse(fs.readFileSync(halvingFile, 'utf8')); } catch (_) { halvingState = null; }
+  let halvingNoticeSent = !!(halvingState && halvingState.noticeSentAt);
+  let halvingFired     = !!(halvingState && halvingState.triggeredAt);
+
+  function saveHalvingState() {
+    const tmp = halvingFile + '.tmp';
+    try {
+      fs.mkdirSync(path.dirname(halvingFile), { recursive: true });
+      fs.writeFileSync(tmp, JSON.stringify(halvingState, null, 2));
+      fs.renameSync(tmp, halvingFile);
+    } catch (e) { log('[halving] save failed: ' + e.message); }
+  }
+
+  // Build a server-direct halving-debit block (no PoW required).
+  function buildHalvingDebitBlock(halvingDebits) {
+    const tip = masterChain[masterChain.length - 1] || { index: -1, hash: '0'.repeat(64) };
+    const ts = Date.now();
+    const block = {
+      index:    tip.index + 1,
+      prevHash: tip.hash || '0'.repeat(64),
+      ts,
+      nonce:    0,
+      txs: halvingDebits.map(({ address, amt }) => ({
+        from: address,
+        to:   'halving-sink',
+        amt,
+        cur:  'RUNE',
+        auth: { type: 'halving-debit', firedAt: ts },
+      })),
+    };
+    // Deterministic hash so it's auditable even without PoW.
+    block.hash = require('crypto').createHash('sha256').update(JSON.stringify(block)).digest('hex');
+    return block;
+  }
+
+  function fireHalving() {
+    if (!halvingState || halvingFired) return;
+    const newSeasonId = halvingState.newSeasonId || 's2';
+    log(`[halving] firing — newSeasonId=${newSeasonId}`);
+
+    // Collect all non-minted-out character addresses.
+    const reg = accountRegistry.listAllAccounts ? accountRegistry.listAllAccounts() : [];
+    const halvingDebits = [];
+    for (const account of reg) {
+      if (account.mintedOut) continue;
+      const address = account.character && account.character.address;
+      if (!address) continue;
+      const bal = runeBalanceOf(address);
+      if (bal > 0) {
+        halvingDebits.push({ address, amt: Math.floor(bal / 2) });
+      }
+    }
+
+    if (halvingDebits.length > 0) {
+      const block = buildHalvingDebitBlock(halvingDebits);
+      appendBlock(block);
+      log(`[halving] debited ${halvingDebits.length} address(es)`);
+    }
+
+    halvingFired = true;
+    halvingState.triggeredAt = new Date().toISOString();
+    halvingState.activeSeasonId = newSeasonId;
+    saveHalvingState();
+
+    // Update active season in account registry.
+    if (accountRegistry.setActiveSeason) accountRegistry.setActiveSeason(newSeasonId);
+
+    const dwindlingLevel = halvingState.dwindlingLevel || 4;
+    broadcast({ t: 'halving', newSeasonId, dwindlingLevel });
+    log(`[halving] complete — season=${newSeasonId}, ${halvingDebits.length} debits`);
+  }
+
+  function checkHalvingTimer() {
+    if (!halvingState || halvingFired) return;
+    const halvingAt = new Date(halvingState.halvingAt).getTime();
+    const nowMs = Date.now();
+    const NOTICE_LEAD_MS = 24 * 60 * 60 * 1000;
+
+    if (!halvingNoticeSent && nowMs >= halvingAt - NOTICE_LEAD_MS) {
+      halvingNoticeSent = true;
+      halvingState.noticeSentAt = new Date().toISOString();
+      saveHalvingState();
+      broadcast({ t: 'halving-notice', halvingAt: halvingState.halvingAt, dwindlingLevel: halvingState.dwindlingLevel || 4 });
+      log('[halving] 24h notice broadcast sent');
+    }
+
+    if (nowMs >= halvingAt) {
+      fireHalving();
+    }
+  }
+
+  // Poll every 60s. Cleared on server close.
+  let halvingInterval = setInterval(checkHalvingTimer, 60 * 1000);
+  // Check immediately on start (handles restarts after scheduled halvingAt).
+  setImmediate(checkHalvingTimer);
   const seasonConfig = normalizeSeasonConfig(options.season || options.seasonState || {
     id: options.seasonId || DEFAULT_SEASON_ID,
     opensAt: options.seasonOpensAt,
@@ -175,6 +276,55 @@ function createRealmServer(options = {}) {
     if (/^\/claim(\/|$)/.test(req.url.split('?')[0])) {
       handleClaimRoute(req, res);
       return;
+    }
+
+    // ---- Halving admin endpoints ------------------------------------------------
+    const halvingRoute = req.url.split('?')[0];
+
+    // POST /admin/halving/schedule  { halvingAt, newSeasonId, dwindlingLevel? }
+    if (halvingRoute === '/admin/halving/schedule' && req.method === 'POST') {
+      if (!ADMIN_TOKEN || req.headers['x-admin-token'] !== ADMIN_TOKEN) {
+        res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'unauthorized' }));
+      }
+      let body = '';
+      req.on('data', d => { body += d; if (body.length > 4096) req.destroy(); });
+      req.on('end', () => {
+        try {
+          const { halvingAt, newSeasonId, dwindlingLevel } = JSON.parse(body);
+          if (!halvingAt || isNaN(new Date(halvingAt).getTime()))
+            return (res.writeHead(400), res.end(JSON.stringify({ error: 'halvingAt must be a valid ISO8601 timestamp' })));
+          if (new Date(halvingAt).getTime() <= Date.now())
+            return (res.writeHead(400), res.end(JSON.stringify({ error: 'halvingAt must be in the future' })));
+          halvingState = { halvingAt, newSeasonId: newSeasonId || 's2', dwindlingLevel: dwindlingLevel || 4, noticeSentAt: null, triggeredAt: null };
+          halvingNoticeSent = false;
+          halvingFired = false;
+          saveHalvingState();
+          log(`[halving] scheduled for ${halvingAt} → season ${halvingState.newSeasonId}`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ ok: true, halvingAt, newSeasonId: halvingState.newSeasonId }));
+        } catch (_) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'invalid_json' })); }
+      });
+      return;
+    }
+
+    // GET /admin/halving/status
+    if (halvingRoute === '/admin/halving/status' && req.method === 'GET') {
+      if (!ADMIN_TOKEN || req.headers['x-admin-token'] !== ADMIN_TOKEN) {
+        res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'unauthorized' }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ scheduled: !!halvingState, state: halvingState }));
+    }
+
+    // POST /character/mint-out  (auth-gated — requires active session + character)
+    if (halvingRoute === '/character/mint-out' && req.method === 'POST') {
+      const sessionId = (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('rc_session='))?.slice('rc_session='.length);
+      const session = sessionId && sessionStore.get(sessionId);
+      if (!session) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'not_signed_in' })); }
+      const result = accountRegistry.setMintedOut(session.accountId);
+      if (!result.ok) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: result.error.code })); }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: true, mintedOut: true }));
     }
 
     // S2 player-compute endpoints
@@ -1547,6 +1697,10 @@ function createRealmServer(options = {}) {
       clearInterval(sweepInterval);
       sweepInterval = null;
     }
+    if (halvingInterval) {
+      clearInterval(halvingInterval);
+      halvingInterval = null;
+    }
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
@@ -2286,6 +2440,36 @@ function createAccountRegistry(options = {}) {
     return clone(registry);
   }
 
+  // ---- Halving support -------------------------------------------------------
+
+  // Return all accounts with their current-season character for halving enumeration.
+  function listAllAccounts() {
+    return Object.values(registry.accounts).map(acc => ({
+      id: acc.id,
+      mintedOut: !!acc.mintedOut,
+      character: acc.characters && acc.characters[seasonId] ? clone(acc.characters[seasonId]) : null,
+    }));
+  }
+
+  // Mark the current season's character as minted-out (excluded from Halving).
+  function setMintedOut(accountId) {
+    const account = registry.accounts[accountId];
+    if (!account) return accountError('unknown_account', 'Account not found.');
+    const character = account.characters && account.characters[seasonId];
+    if (!character) return accountError('no_character', 'No character in current season to mint out.');
+    if (account.mintedOut) return { ok: true, already: true };
+    account.mintedOut = true;
+    account.mintedOutAt = new Date().toISOString();
+    saveRegistry();
+    return { ok: true };
+  }
+
+  // Update active season ID in the registry on Halving fire.
+  function setActiveSeason(newSeasonId) {
+    registry.activeSeason = newSeasonId;
+    saveRegistry();
+  }
+
   return {
     createChallenge,
     verifyJoin,
@@ -2310,6 +2494,9 @@ function createAccountRegistry(options = {}) {
     listAgents,
     revokeAgentForAccount,
     verifyAgentRequest,
+    listAllAccounts,
+    setMintedOut,
+    setActiveSeason,
   };
 }
 
